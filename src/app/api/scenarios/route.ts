@@ -8,7 +8,17 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const limitStr = url.searchParams.get('limit');
     const climate = url.searchParams.get('climate') ?? undefined;
-    const limit = limitStr ? Number(limitStr) : undefined;
+    let limit: number | undefined;
+    if (limitStr !== null) {
+      const parsed = Number(limitStr);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return NextResponse.json(
+          { error: 'Invalid limit parameter' },
+          { status: 400 }
+        );
+      }
+      limit = Math.min(Math.floor(parsed), 500);
+    }
     const rows = await listScenarios({ limit, climateZone: climate });
     return NextResponse.json(rows);
   } catch (err) {

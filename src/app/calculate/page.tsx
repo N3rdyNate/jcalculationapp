@@ -46,9 +46,9 @@ export default function CalculatePage() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <div className="lg:col-span-3">
-        <h1 className="text-2xl font-bold text-slate-900 mb-4">Calculate Load</h1>
+    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 print-stack">
+      <div className="lg:col-span-3 print-hide">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4">Calculate Load</h1>
         <CalculationForm
           onResult={(r, i) => {
             setResult(r);
@@ -57,7 +57,7 @@ export default function CalculatePage() {
         />
       </div>
       <div className="lg:col-span-2">
-        <h2 className="text-2xl font-bold text-slate-900 mb-4">Results</h2>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4 print-hide">Results</h2>
         <div className="sticky top-4">
           {result ? (
             <ResultsPanel
@@ -66,7 +66,7 @@ export default function CalculatePage() {
             />
           ) : (
             <Card>
-              <p className="text-sm text-slate-500 text-center py-8">
+              <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">
                 Fill in the form and click <strong>Calculate loads</strong> to see results.
               </p>
             </Card>
@@ -75,9 +75,12 @@ export default function CalculatePage() {
       </div>
 
       {showSaveModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">Save Scenario</h3>
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 print-hide"
+          onClick={() => setShowSaveModal(false)}
+        >
+          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">Save scenario</h3>
             <div className="space-y-3">
               <Field label="Name">
                 <Input
