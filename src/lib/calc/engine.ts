@@ -57,6 +57,9 @@ import {
   skylightCoolingConduction,
   skylightSolarGain,
 } from '@/lib/calc/components/skylight';
+import { recommendEquipmentSizing, compareToRuleOfThumb } from '@/lib/calc/sizing';
+import { validateInput, validateResults } from '@/lib/calc/validation';
+import { generateChecklist } from '@/lib/calc/checklist';
 
 /**
  * Normalize the windows input to a uniform per-orientation table so the
@@ -585,7 +588,36 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
       calculatedAt: new Date().toISOString(),
     },
     rooms: roomResults,
-    warnings: allWarnings,
-    fieldChecklist: [],
+
+    // Phase 3: output features
+    latentSensiblePct:
+      coolingTotal > 0
+        ? {
+            sensiblePct: (coolingSensibleTotal / coolingTotal) * 100,
+            latentPct: (coolingLatentTotal / coolingTotal) * 100,
+          }
+        : undefined,
+    equipmentSizing: recommendEquipmentSizing(heatingTotal, coolingTotal),
+    ruleOfThumbComparison: compareToRuleOfThumb(
+      coolingTotal,
+      input.house.squareFootage,
+      rankContributors(scaledComponents, 'cooling')
+    ),
+    warnings: [
+      ...validateInput(input),
+      ...allWarnings,
+      ...validateResults(input, { heatingTotal, coolingTotal, coolingSensibleTotal, coolingLatentTotal } as CalculationResult),
+    ],
+    fieldChecklist: generateChecklist(input, {
+      ...({} as CalculationResult),
+      heatingTotal,
+      coolingTotal,
+      coolingSensibleTotal,
+      coolingLatentTotal,
+      topHeatingContributors: rankContributors(scaledComponents, 'heating'),
+      topCoolingContributors: rankContributors(scaledComponents, 'cooling'),
+      components: scaledComponents,
+      inputs: input,
+    } as CalculationResult),
   };
 }
