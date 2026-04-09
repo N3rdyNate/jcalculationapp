@@ -359,9 +359,17 @@ export function CalculationForm({ initialValues, onResult }: Props) {
           </Field>
           <Field
             label={foundationType === 'slab' ? 'F-factor' : 'Effective U'}
-            hint={foundationType === 'slab' ? 'BTU/(hr·ft·°F)' : 'BTU/(hr·ft²·°F)'}
+            hint={
+              foundationType === 'slab'
+                ? 'BTU/(hr·ft·°F) — applied to perimeter'
+                : 'BTU/(hr·ft²·°F) — e.g. 0.053 for R-19 floor'
+            }
           >
-            <Input type="number" step="0.01" {...register('envelope.foundationFactor', { valueAsNumber: true })} />
+            <Input
+              type="number"
+              step="any"
+              {...register('envelope.foundationFactor', { valueAsNumber: true })}
+            />
           </Field>
           {(foundationType === 'heated_basement' ||
             foundationType === 'unheated_basement') && (
@@ -485,7 +493,17 @@ export function CalculationForm({ initialValues, onResult }: Props) {
       </Card>
 
       {/* -------- Infiltration -------- */}
-      <Card title="Infiltration" description="Construction quality / air tightness">
+      <Card
+        title="Infiltration"
+        description="Unintentional air leakage through the building envelope"
+      >
+        <p className="text-xs text-slate-600 dark:text-slate-400 mb-3">
+          <strong>ACH</strong> (Air Changes per Hour) is the number of
+          times the house volume is replaced by outside air per hour
+          under natural conditions. <strong>Natural ACH</strong> ≈
+          ACH50 (measured with a blower door at 50 Pa) divided by
+          17–20 for typical US climates and wind exposure.
+        </p>
         <Field label="Tightness preset">
           <Select defaultValue="" onChange={(e) => applyInfiltrationPreset(e.target.value)}>
             <option value="">— Choose a preset —</option>
@@ -496,7 +514,11 @@ export function CalculationForm({ initialValues, onResult }: Props) {
             ))}
           </Select>
         </Field>
-        <Field label="Natural ACH" className="mt-3">
+        <Field
+          label="Natural ACH"
+          hint="Leaky old home ≈ 1.0 · Average existing ≈ 0.5 · New code ≈ 0.35 · Passive House ≈ 0.04"
+          className="mt-3"
+        >
           <Input type="number" step="0.05" {...register('infiltration.ach', { valueAsNumber: true })} />
         </Field>
       </Card>
@@ -573,7 +595,10 @@ export function CalculationForm({ initialValues, onResult }: Props) {
       </Card>
 
       {/* -------- Internal loads -------- */}
-      <Card title="Internal Loads">
+      <Card
+        title="Internal Loads"
+        description="Heat from people, appliances, and lighting inside the house"
+      >
         <Field label="Lifestyle preset">
           <Select defaultValue="" onChange={(e) => applyInternalPreset(e.target.value)}>
             <option value="">— Choose a preset —</option>
@@ -584,6 +609,33 @@ export function CalculationForm({ initialValues, onResult }: Props) {
             ))}
           </Select>
         </Field>
+        <details className="mt-3 text-xs text-slate-600 dark:text-slate-400">
+          <summary className="cursor-pointer font-medium text-slate-700 dark:text-slate-300">
+            Appliance wattage reference
+          </summary>
+          <div className="mt-2 space-y-1 pl-3 border-l-2 border-slate-200 dark:border-slate-700">
+            <p>Enter the sum of average continuous draw, not peak. Rough guidance:</p>
+            <ul className="list-disc pl-4 space-y-0.5">
+              <li><strong>Refrigerator:</strong> 150–250 W (average, includes defrost cycles)</li>
+              <li><strong>Chest/upright freezer:</strong> 100–200 W</li>
+              <li><strong>Cooking (range/oven):</strong> 300–600 W (average; peak is far higher)</li>
+              <li><strong>Dishwasher:</strong> 100–200 W (average with ~1 cycle/day)</li>
+              <li><strong>Clothes washer + dryer:</strong> 200–400 W (average with ~1 load/day)</li>
+              <li><strong>TV + media + computers:</strong> 150–400 W</li>
+              <li><strong>Phone/laptop chargers, routers, standby:</strong> 50–150 W</li>
+              <li><strong>Aquarium, pet heater, pool pump, hot tub:</strong> variable, add explicitly</li>
+            </ul>
+            <p className="pt-1">
+              <strong>Presets:</strong> Minimal ≈ 500 W · Typical ≈ 1200 W · High-use ≈ 2000 W · Home office + media-heavy ≈ 2500 W.
+            </p>
+            <p className="pt-1 italic">
+              Reference: ASHRAE Handbook of Fundamentals Ch. 18, Table 5
+              (Recommended Heat Gain from Common Appliances). Values
+              above are rough averages for a residence — use the
+              product nameplate × expected duty cycle for accuracy.
+            </p>
+          </div>
+        </details>
         <div className="grid grid-cols-2 gap-3 mt-3">
           <Field
             label="Occupancy activity level"
@@ -625,7 +677,7 @@ export function CalculationForm({ initialValues, onResult }: Props) {
           </Field>
           <Field
             label="Appliances (W)"
-            hint="Typical home: 1000–1800 W continuous"
+            hint="Sum of average continuous appliance draw. See guide below."
           >
             <Input type="number" step="50" {...register('internal.applianceWatts', { valueAsNumber: true })} />
           </Field>

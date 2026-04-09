@@ -145,11 +145,160 @@ export function ResultsPanel({ result, onSave }: Props) {
           </div>
         </dl>
         <p className="text-xs text-slate-500 dark:text-slate-400 mt-3">
-          Results are within ~5% of ACCA Manual J 8th for typical residential
-          cases. Not a substitute for certified Manual J software. Does not
-          model duct losses, mechanical ventilation, shading, or room-by-room
-          distribution.
+          Results are within ~5% of ACCA Manual J 8th for typical
+          residential cases. Not a substitute for certified Manual J
+          software.
         </p>
+
+        <details className="mt-4 text-xs text-slate-600 dark:text-slate-400">
+          <summary className="cursor-pointer font-medium text-slate-700 dark:text-slate-300">
+            References for applied calculations
+          </summary>
+          <div className="mt-2 space-y-3 pl-3 border-l-2 border-slate-200 dark:border-slate-700">
+            <div>
+              <p className="font-medium text-slate-700 dark:text-slate-300">Primary sources</p>
+              <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                <li>
+                  <strong>ACCA Manual J, 8th Edition</strong> — Residential Load
+                  Calculation (Air Conditioning Contractors of America, 2016).
+                  Design temperatures, CLTD tables, solar cooling load (SCL)
+                  factors, shading multipliers, duct loss factors.
+                </li>
+                <li>
+                  <strong>ASHRAE Handbook of Fundamentals, Ch. 17–18</strong> —
+                  Residential Cooling and Heating Load Calculations, and
+                  Nonresidential Cooling and Heating Load Calculations
+                  (American Society of Heating, Refrigerating and
+                  Air-Conditioning Engineers).
+                </li>
+                <li>
+                  <strong>IECC 2021</strong> — International Energy
+                  Conservation Code climate zone definitions (1A–8).
+                </li>
+                <li>
+                  <strong>NFRC 100 / 200</strong> — U-factor and SHGC rating
+                  procedures for fenestration.
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="font-medium text-slate-700 dark:text-slate-300">Formulas by component</p>
+              <ul className="list-disc pl-4 mt-1 space-y-1">
+                <li>
+                  <strong>Opaque envelope (heating):</strong>
+                  <span className="font-mono"> Q = (1/R) · A · ΔT</span>
+                  — Fourier conduction; ASHRAE HoF Ch. 17.
+                </li>
+                <li>
+                  <strong>Walls / roof (cooling):</strong>
+                  <span className="font-mono"> Q = U · A · CLTD</span>
+                  — Cooling Load Temperature Difference method; ASHRAE
+                  HoF Ch. 18, Table 14. CLTD selected from roof color /
+                  wall mass.
+                </li>
+                <li>
+                  <strong>Windows conduction:</strong>
+                  <span className="font-mono"> Q = U · A · ΔT</span>
+                  — frame U-multiplier applied per NFRC guidance.
+                </li>
+                <li>
+                  <strong>Windows solar gain:</strong>
+                  <span className="font-mono"> Q = SHGC · A · SCL(orientation) · shading</span>
+                  — Solar Cooling Load factors from ACCA Manual J
+                  Table 3A-SCL; shading multipliers from Manual J
+                  Table 3B.
+                </li>
+                <li>
+                  <strong>Infiltration sensible:</strong>
+                  <span className="font-mono"> Q = 1.08 · CFM · ΔT</span>
+                  — ASHRAE HoF Ch. 18, where 1.08 = 0.018 · 60 at sea-
+                  level density; altitude-corrected by ρ/ρ₀ ratio.
+                </li>
+                <li>
+                  <strong>Infiltration latent:</strong>
+                  <span className="font-mono"> Q = 0.68 · CFM · ΔW</span>
+                  — ΔW in grains of moisture per lb dry air; ASHRAE
+                  HoF Ch. 18.
+                </li>
+                <li>
+                  <strong>CFM from ACH:</strong>
+                  <span className="font-mono"> CFM = ACH · Volume / 60</span>
+                  — natural infiltration. ACH ≈ ACH50 / N where N ≈ 17–20.
+                </li>
+                <li>
+                  <strong>Mechanical ventilation:</strong> same form as
+                  infiltration, reduced by sensible / total recovery
+                  efficiency for HRV / ERV systems.
+                </li>
+                <li>
+                  <strong>Occupants (cooling):</strong>
+                  sensible + latent per person by activity level;
+                  ASHRAE HoF Ch. 18, Table 1 (seated light → vigorous).
+                </li>
+                <li>
+                  <strong>Lights / appliances:</strong>
+                  <span className="font-mono"> Q = W · 3.412 BTU/hr/W</span>
+                  — full-load conversion; lighting density from ASHRAE
+                  90.1 defaults by technology.
+                </li>
+                <li>
+                  <strong>Slab foundation:</strong>
+                  <span className="font-mono"> Q = F · P · ΔT</span>
+                  — F-factor (perimeter heat loss coefficient) method;
+                  ASHRAE HoF Ch. 18. F depends on edge insulation.
+                </li>
+                <li>
+                  <strong>Basement / crawlspace:</strong>
+                  <span className="font-mono"> Q = U<sub>eff</sub> · A · ΔT<sub>ground</sub></span>
+                  — effective U-value against ground temperature;
+                  ASHRAE HoF Ch. 18. Vented crawls scaled by 0.5.
+                </li>
+                <li>
+                  <strong>Duct losses:</strong> multiplier applied to all
+                  envelope components (not internal or solar); ACCA
+                  Manual J 8 Appendix 7, Tables A7-1…A7-5 (location ×
+                  insulation R-value).
+                </li>
+                <li>
+                  <strong>Altitude density correction:</strong>
+                  ρ/ρ₀ ratio applied to the 1.08 / 0.68 infiltration
+                  and ventilation constants; ASHRAE HoF Ch. 1.
+                </li>
+                <li>
+                  <strong>Roof surface area:</strong>
+                  <span className="font-mono"> A = footprint · √(12² + rise²) / 12</span>
+                  — slope-length factor for pitched roofs.
+                </li>
+                <li>
+                  <strong>Perimeter (estimated):</strong>
+                  <span className="font-mono"> P = 4 · √(sqft / stories)</span>
+                  — square-house approximation when user doesn't
+                  provide an explicit perimeter.
+                </li>
+              </ul>
+            </div>
+
+            <div>
+              <p className="font-medium text-slate-700 dark:text-slate-300">Limitations</p>
+              <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                <li>
+                  Whole-house totals only — does not produce a
+                  room-by-room distribution required for duct sizing.
+                </li>
+                <li>
+                  Simplified CLTD/SCL tables; not adjusted for latitude
+                  beyond the coarse IECC zone mapping.
+                </li>
+                <li>
+                  Does not model thermal mass decoupling, internal
+                  shading beyond a single multiplier, or detailed duct
+                  leakage vs. conduction loss.
+                </li>
+              </ul>
+            </div>
+          </div>
+        </details>
       </Card>
     </div>
   );
