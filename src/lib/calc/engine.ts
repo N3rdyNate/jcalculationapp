@@ -400,5 +400,9 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
       ductLossFraction: ductLossFraction(ductInput.location, ductInput.rValue),
       calculatedAt: new Date().toISOString(),
     },
+    // Phase 2/3 placeholders — populated by later phases
+    rooms: [],
+    warnings: [],
+    fieldChecklist: [],
   };
 }
