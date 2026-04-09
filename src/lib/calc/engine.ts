@@ -5,7 +5,10 @@ import type {
   Contributor,
   Orientation,
   GlazingSpec,
+  RoomResult,
+  ValidationWarning,
 } from '@/lib/calc/types';
+import { calculateRoomLoad, type HouseContext } from '@/lib/calc/room-engine';
 import { getClimateZone } from '@/lib/calc/constants/climate-zones';
 import {
   DEFAULT_INDOOR_WINTER,
@@ -502,6 +505,60 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
   );
   const coolingTotal = coolingSensibleTotal + coolingLatentTotal;
 
+  // ---- Room-by-room (Phase 2) ------------------------------------
+  let roomResults: RoomResult[] = [];
+  const allWarnings: ValidationWarning[] = [];
+
+  if (input.rooms && input.rooms.length > 0) {
+    const groundDTForCtx = DEFAULT_INDOOR_WINTER - zone.annualAvgTemp;
+    const houseCtx: HouseContext = {
+      dTWinter,
+      dTSummer,
+      groundDT: groundDTForCtx,
+      densityRatio,
+      humidityRatioDelta: zone.humidityRatioDelta,
+      defaultWallR: wallR,
+      defaultWallMass: input.envelope.wallMass,
+      defaultRoofR: roofR,
+      defaultRoofColor: input.envelope.roofColor,
+      defaultFoundationFactor: input.envelope.foundationFactor,
+      defaultFoundationType: input.envelope.foundationType,
+    };
+
+    // Compute whole-house infiltration and internal loads for distribution
+    const infilComp = scaledComponents.find((c) => c.component === 'infiltration');
+    const internalComp = scaledComponents.find((c) => c.component === 'internal');
+    const totalRoomSqft = input.rooms.reduce((s, r) => s + r.squareFootage, 0);
+
+    roomResults = input.rooms.map((room) => {
+      const fraction = totalRoomSqft > 0 ? room.squareFootage / totalRoomSqft : 0;
+      const roomVolFraction =
+        totalRoomSqft > 0
+          ? (room.squareFootage * room.ceilingHeight) /
+            input.rooms!.reduce((s, r) => s + r.squareFootage * r.ceilingHeight, 0)
+          : 0;
+
+      return calculateRoomLoad(
+        room,
+        houseCtx,
+        {
+          heating: (infilComp?.heating ?? 0) * roomVolFraction,
+          coolingSensible: (infilComp?.coolingSensible ?? 0) * roomVolFraction,
+          coolingLatent: (infilComp?.coolingLatent ?? 0) * roomVolFraction,
+        },
+        {
+          coolingSensible: (internalComp?.coolingSensible ?? 0) * fraction,
+          coolingLatent: (internalComp?.coolingLatent ?? 0) * fraction,
+        }
+      );
+    });
+
+    // Collect all room warnings
+    for (const r of roomResults) {
+      allWarnings.push(...r.warnings);
+    }
+  }
+
   return {
     heatingTotal,
     coolingSensibleTotal,
@@ -527,9 +584,8 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
       ),
       calculatedAt: new Date().toISOString(),
     },
-    // Phase 2/3 placeholders — populated by later phases
-    rooms: [],
-    warnings: [],
+    rooms: roomResults,
+    warnings: allWarnings,
     fieldChecklist: [],
   };
 }
