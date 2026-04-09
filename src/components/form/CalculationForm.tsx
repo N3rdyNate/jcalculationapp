@@ -12,12 +12,15 @@ import { ROOF_ASSEMBLY_PRESETS, getRoofAssemblyPreset } from '@/lib/calc/presets
 import { FOUNDATION_PRESETS, getFoundationPreset } from '@/lib/calc/presets/foundation';
 import { INFILTRATION_PRESETS, getInfiltrationPreset } from '@/lib/calc/presets/infiltration';
 import { INTERNAL_LOAD_PRESETS, getInternalLoadPreset } from '@/lib/calc/presets/internal';
+import { ATTIC_INSULATION, type AtticInsulationType } from '@/lib/calc/constants/attic-insulation';
 import { Card } from '@/components/ui/Card';
 import { Field } from '@/components/ui/Field';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { useState } from 'react';
+import { RoomList } from '@/components/form/RoomList';
+import type { RoomInput } from '@/lib/calc/types';
 
 const DEFAULT_VALUES: CalculationInput = {
   climateZoneId: '4A',
@@ -50,7 +53,8 @@ const DEFAULT_VALUES: CalculationInput = {
     shading: 'none',
     frameMaterial: 'vinyl',
   },
-  infiltration: { ach: 0.5 },
+  infiltration: { ach: 0.5, method: 'natural_ach' },
+  fireplace: { type: 'none' },
   internal: {
     occupants: 4,
     applianceWatts: 1200,
@@ -107,6 +111,9 @@ export function CalculationForm({ initialValues, onResult }: Props) {
   const foundationType = useWatch({ control, name: 'envelope.foundationType' });
   const garageAttached = useWatch({ control, name: 'garage.attached' });
   const ventType = useWatch({ control, name: 'ventilation.type' });
+  const infiltrationMethod = useWatch({ control, name: 'infiltration.method' });
+  const slabEdgeInsulated = useWatch({ control, name: 'envelope.slabEdgeInsulated' });
+  const ductLocation = useWatch({ control, name: 'ducts.location' });
 
   async function onSubmit(data: CalculationInput) {
     setSubmitError(null);
@@ -274,6 +281,25 @@ export function CalculationForm({ initialValues, onResult }: Props) {
             <Input type="number" step="0.05" {...register('envelope.doorUValue', { valueAsNumber: true })} />
           </Field>
         </div>
+        <details className="mt-3">
+          <summary className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+            Thermal bridging (advanced)
+          </summary>
+          <div className="grid grid-cols-2 gap-3 mt-2">
+            <Field label="Framing percentage" hint="Typical 16&quot; OC: 23%. Leave blank to skip.">
+              <Input type="number" step="1" min="0" max="50" placeholder="e.g. 23"
+                {...register('envelope.framingPct', { setValueAs: (v) => v === '' ? undefined : Number(v) / 100 })}
+              />
+            </Field>
+            <Field label="Stud depth">
+              <Select {...register('envelope.studDepth', { setValueAs: (v) => v === '' ? undefined : Number(v) })}>
+                <option value="">— Auto —</option>
+                <option value="3.5">2×4 (3.5&quot;)</option>
+                <option value="5.5">2×6 (5.5&quot;)</option>
+              </Select>
+            </Field>
+          </div>
+        </details>
       </Card>
 
       {/* -------- Roof -------- */}
@@ -331,6 +357,23 @@ export function CalculationForm({ initialValues, onResult }: Props) {
               <option value="true">Vented</option>
               <option value="false">Unvented / sealed</option>
             </Select>
+          </Field>
+          <Field label="Attic insulation type" hint="Overrides R-value when set with depth">
+            <Select {...register('envelope.atticInsulationType')}>
+              <option value="">— Use R-value above —</option>
+              {(Object.entries(ATTIC_INSULATION) as [AtticInsulationType, { label: string; rPerInch: number }][]).map(
+                ([key, mat]) => (
+                  <option key={key} value={key}>
+                    {mat.label} (R-{mat.rPerInch}/in)
+                  </option>
+                )
+              )}
+            </Select>
+          </Field>
+          <Field label="Attic insulation depth (in)" hint="Computed R = R-per-inch × depth">
+            <Input type="number" step="0.5" min="0" max="30"
+              {...register('envelope.atticInsulationDepth', { valueAsNumber: true })}
+            />
           </Field>
         </div>
       </Card>
@@ -391,6 +434,35 @@ export function CalculationForm({ initialValues, onResult }: Props) {
               <option value="false">No</option>
             </Select>
           </Field>
+          <Field label="Floor R-value" hint="R-value of floor assembly (over crawl/basement)">
+            <Input type="number" step="1" min="0" max="60"
+              {...register('envelope.floorRValue', { valueAsNumber: true })}
+            />
+          </Field>
+          {foundationType === 'slab' && (
+            <>
+              <Field label="Slab edge insulated?">
+                <Select {...register('envelope.slabEdgeInsulated', { setValueAs: (v) => v === 'true' })}>
+                  <option value="false">No</option>
+                  <option value="true">Yes</option>
+                </Select>
+              </Field>
+              {slabEdgeInsulated && (
+                <>
+                  <Field label="Edge insulation R-value">
+                    <Input type="number" step="1" min="0" max="20"
+                      {...register('envelope.slabEdgeRValue', { valueAsNumber: true })}
+                    />
+                  </Field>
+                  <Field label="Edge insulation depth (ft)">
+                    <Input type="number" step="0.5" min="0" max="4"
+                      {...register('envelope.slabEdgeDepth', { valueAsNumber: true })}
+                    />
+                  </Field>
+                </>
+              )}
+            </>
+          )}
         </div>
       </Card>
 
@@ -462,6 +534,21 @@ export function CalculationForm({ initialValues, onResult }: Props) {
                       <option value="trees">Trees</option>
                     </Select>
                   </Field>
+                  <Field
+                    label="Overhang depth (ft)"
+                    hint="Roof overhang projection; reduces solar gain on S/SE/SW"
+                  >
+                    <Input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      max="10"
+                      value={value.overhangDepth ?? 0}
+                      onChange={(e) =>
+                        field.onChange({ ...value, overhangDepth: Number(e.target.value) })
+                      }
+                    />
+                  </Field>
                 </div>
                 <div className="mt-3">
                   <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Area by orientation (ft²)</p>
@@ -504,23 +591,54 @@ export function CalculationForm({ initialValues, onResult }: Props) {
           ACH50 (measured with a blower door at 50 Pa) divided by
           17–20 for typical US climates and wind exposure.
         </p>
-        <Field label="Tightness preset">
-          <Select defaultValue="" onChange={(e) => applyInfiltrationPreset(e.target.value)}>
-            <option value="">— Choose a preset —</option>
-            {INFILTRATION_PRESETS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label} — {p.ach} ACH ({p.ach50Equivalent} ACH50)
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field
-          label="Natural ACH"
-          hint="Leaky old home ≈ 1.0 · Average existing ≈ 0.5 · New code ≈ 0.35 · Passive House ≈ 0.04"
-          className="mt-3"
-        >
-          <Input type="number" step="0.05" {...register('infiltration.ach', { valueAsNumber: true })} />
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Input method">
+            <Select {...register('infiltration.method')}>
+              <option value="natural_ach">Enter natural ACH directly</option>
+              <option value="ach50">Enter blower door ACH50</option>
+              <option value="estimate">Estimate from construction quality</option>
+            </Select>
+          </Field>
+          <Field label="Tightness preset" hint="Auto-fills the ACH value below">
+            <Select defaultValue="" onChange={(e) => applyInfiltrationPreset(e.target.value)}>
+              <option value="">— Choose a preset —</option>
+              {INFILTRATION_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label} — {p.ach} ACH ({p.ach50Equivalent} ACH50)
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        {infiltrationMethod === 'ach50' ? (
+          <Field
+            label="Blower door ACH50"
+            hint="Measured at 50 Pa. Engine converts to natural ACH using N-factor method."
+            className="mt-3"
+          >
+            <Input type="number" step="0.1" min="0" max="30"
+              {...register('infiltration.ach50', { valueAsNumber: true })}
+            />
+          </Field>
+        ) : infiltrationMethod === 'estimate' ? (
+          <Field label="Construction quality" className="mt-3">
+            <Select {...register('infiltration.constructionQuality')}>
+              <option value="leaky">Leaky (pre-1980, no weatherstripping) ≈ 1.0 ACH</option>
+              <option value="average">Average existing home ≈ 0.5 ACH</option>
+              <option value="tight">Tight new construction ≈ 0.35 ACH</option>
+              <option value="very_tight">Very tight (≤3 ACH50) ≈ 0.18 ACH</option>
+              <option value="passive">Passive House (≤0.6 ACH50) ≈ 0.04 ACH</option>
+            </Select>
+          </Field>
+        ) : (
+          <Field
+            label="Natural ACH"
+            hint="Leaky old home ≈ 1.0 · Average existing ≈ 0.5 · New code ≈ 0.35 · Passive House ≈ 0.04"
+            className="mt-3"
+          >
+            <Input type="number" step="0.05" {...register('infiltration.ach', { valueAsNumber: true })} />
+          </Field>
+        )}
       </Card>
 
       {/* -------- Mechanical ventilation -------- */}
@@ -547,7 +665,7 @@ export function CalculationForm({ initialValues, onResult }: Props) {
       </Card>
 
       {/* -------- Ducts -------- */}
-      <Card title="Ducts">
+      <Card title="Ducts" description="Location, insulation, and leakage of HVAC ductwork">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Duct location">
             <Select {...register('ducts.location')}>
@@ -565,13 +683,31 @@ export function CalculationForm({ initialValues, onResult }: Props) {
               <option value={15}>R-15</option>
             </Select>
           </Field>
+          {ductLocation !== 'conditioned' && (
+            <Field
+              label="Duct leakage %"
+              hint="From duct blaster test. Leave blank for table estimate."
+            >
+              <Input type="number" step="1" min="0" max="50" placeholder="e.g. 12"
+                {...register('ducts.leakagePct', { setValueAs: (v) => v === '' ? undefined : Number(v) })}
+              />
+            </Field>
+          )}
         </div>
       </Card>
 
       {/* -------- Garage -------- */}
-      <Card title="Attached Garage">
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Attached?">
+      <Card title="Garage">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Garage type">
+            <Select {...register('garage.type')}>
+              <option value="none">None / no garage</option>
+              <option value="detached">Detached</option>
+              <option value="attached_conditioned">Attached, conditioned</option>
+              <option value="attached_unconditioned">Attached, unconditioned</option>
+            </Select>
+          </Field>
+          <Field label="Legacy: attached?">
             <Select
               {...register('garage.attached', {
                 setValueAs: (v) => v === 'true',
@@ -592,6 +728,81 @@ export function CalculationForm({ initialValues, onResult }: Props) {
             </>
           )}
         </div>
+      </Card>
+
+      {/* -------- Fireplace -------- */}
+      <Card title="Fireplace" description="Adds an infiltration penalty for chimney draft">
+        <Field label="Fireplace type">
+          <Select {...register('fireplace.type')}>
+            <option value="none">None</option>
+            <option value="wood_burning">Wood-burning (open damper, +0.15 ACH)</option>
+            <option value="gas_vented">Gas, vented / B-vent (+0.05 ACH)</option>
+            <option value="gas_unvented">Gas, sealed / direct-vent (no penalty)</option>
+          </Select>
+        </Field>
+      </Card>
+
+      {/* -------- Skylights -------- */}
+      <Card title="Skylights" description="Optional — adds conduction + solar gain for each skylight">
+        <Controller
+          control={control}
+          name="skylights"
+          render={({ field }) => {
+            const skylights = field.value ?? [];
+            return (
+              <>
+                {skylights.map((sky, i) => (
+                  <div key={i} className="grid grid-cols-5 gap-2 mb-2 items-end">
+                    <Field label={i === 0 ? 'Area (ft²)' : ''}>
+                      <Input type="number" step="1" value={sky.area}
+                        onChange={(e) => {
+                          const arr = [...skylights];
+                          arr[i] = { ...arr[i], area: Number(e.target.value) };
+                          field.onChange(arr);
+                        }} />
+                    </Field>
+                    <Field label={i === 0 ? 'U-value' : ''}>
+                      <Input type="number" step="0.01" value={sky.uValue}
+                        onChange={(e) => {
+                          const arr = [...skylights];
+                          arr[i] = { ...arr[i], uValue: Number(e.target.value) };
+                          field.onChange(arr);
+                        }} />
+                    </Field>
+                    <Field label={i === 0 ? 'SHGC' : ''}>
+                      <Input type="number" step="0.01" value={sky.shgc}
+                        onChange={(e) => {
+                          const arr = [...skylights];
+                          arr[i] = { ...arr[i], shgc: Number(e.target.value) };
+                          field.onChange(arr);
+                        }} />
+                    </Field>
+                    <Field label={i === 0 ? 'Orientation' : ''}>
+                      <Select value={sky.orientation}
+                        onChange={(e) => {
+                          const arr = [...skylights];
+                          arr[i] = { ...arr[i], orientation: e.target.value as typeof sky.orientation };
+                          field.onChange(arr);
+                        }}>
+                        {['N','NE','E','SE','S','SW','W','NW'].map(o => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Button type="button" variant="danger"
+                      onClick={() => field.onChange(skylights.filter((_, j) => j !== i))}>
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+                <Button type="button" variant="secondary"
+                  onClick={() => field.onChange([...skylights, { area: 10, uValue: 0.5, shgc: 0.4, orientation: 'S' as const }])}>
+                  + Add skylight
+                </Button>
+              </>
+            );
+          }}
+        />
       </Card>
 
       {/* -------- Internal loads -------- */}
@@ -686,6 +897,18 @@ export function CalculationForm({ initialValues, onResult }: Props) {
           </Field>
         </div>
       </Card>
+
+      {/* -------- Room-by-room -------- */}
+      <Controller
+        control={control}
+        name="rooms"
+        render={({ field }) => (
+          <RoomList
+            rooms={field.value ?? []}
+            onChange={(rooms: RoomInput[]) => field.onChange(rooms.length > 0 ? rooms : undefined)}
+          />
+        )}
+      />
 
       {submitError && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">
