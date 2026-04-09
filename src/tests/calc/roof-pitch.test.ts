@@ -3,6 +3,55 @@ import {
   ROOF_PITCH_MULTIPLIER,
   type RoofPitch,
 } from '@/lib/calc/constants/roof-pitch';
+import {
+  roofPitchSchema,
+  activityLevelSchema,
+  lightingTypeSchema,
+} from '@/lib/calc/schemas';
+
+describe('roofPitchSchema', () => {
+  it('accepts legacy coarse buckets for backwards compat', () => {
+    for (const v of ['flat', 'low', 'standard', 'steep']) {
+      expect(roofPitchSchema.safeParse(v).success).toBe(true);
+    }
+  });
+
+  it('accepts all granular rise/12 values', () => {
+    for (let r = 1; r <= 12; r++) {
+      expect(roofPitchSchema.safeParse(`${r}_12`).success).toBe(true);
+    }
+  });
+
+  it('rejects unknown values', () => {
+    expect(roofPitchSchema.safeParse('13_12').success).toBe(false);
+    expect(roofPitchSchema.safeParse('').success).toBe(false);
+  });
+});
+
+describe('activityLevelSchema (backwards compat)', () => {
+  it('still accepts legacy values', () => {
+    for (const v of ['light', 'moderate', 'heavy']) {
+      expect(activityLevelSchema.safeParse(v).success).toBe(true);
+    }
+  });
+
+  it('accepts new sedentary and vigorous values', () => {
+    expect(activityLevelSchema.safeParse('sedentary').success).toBe(true);
+    expect(activityLevelSchema.safeParse('vigorous').success).toBe(true);
+  });
+});
+
+describe('lightingTypeSchema (backwards compat)', () => {
+  it('still accepts legacy values', () => {
+    for (const v of ['incandescent', 'fluorescent', 'led', 'mixed']) {
+      expect(lightingTypeSchema.safeParse(v).success).toBe(true);
+    }
+  });
+
+  it('accepts new halogen value', () => {
+    expect(lightingTypeSchema.safeParse('halogen').success).toBe(true);
+  });
+});
 
 describe('ROOF_PITCH_MULTIPLIER', () => {
   it('flat has multiplier 1.0', () => {
@@ -56,6 +105,14 @@ describe('ROOF_PITCH_MULTIPLIER', () => {
     expect(ROOF_PITCH_MULTIPLIER['8_12']).toBeCloseTo(
       Math.sqrt(144 + 64) / 12,
       2
+    );
+  });
+
+  it('legacy "standard" matches 6/12 within rounding so reference house holds', () => {
+    // reference house test asserts within 5%; these are within 0.4%
+    expect(ROOF_PITCH_MULTIPLIER.standard).toBeCloseTo(
+      ROOF_PITCH_MULTIPLIER['6_12'],
+      1
     );
   });
 });
