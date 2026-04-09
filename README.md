@@ -6,15 +6,26 @@ Supabase for persistence, deployable to Vercel.
 
 ## What it does
 
-Takes a detailed house description (climate zone, dimensions, envelope,
-windows, infiltration, ducts, ventilation, internal loads, garage) and
-returns:
+Takes a detailed house description — optionally with per-room
+breakdowns — including climate zone, dimensions, envelope (walls, roof,
+foundation, thermal bridging), windows (with overhang shading),
+skylights, infiltration (natural ACH, blower-door ACH50, or
+construction quality estimate), ducts (with leakage %), ventilation,
+internal loads, fireplace, and garage, and returns:
 
 - Winter heating load in BTU/hr
-- Summer cooling load in BTU/hr (sensible + latent)
+- Summer cooling load in BTU/hr (sensible + latent split with %)
 - Per-component breakdown of where the load comes from
+- **Room-by-room** heating and cooling load table (when rooms defined)
 - Ranked top contributors for heating and cooling
-- Save and compare multiple scenarios
+- **Equipment sizing** recommendation (tons/MBH) with oversizing note
+- **20 BTU/sqft rule-of-thumb** comparison flag
+- **Validation warnings** (unusual loads, high ACH, duct leakage, WWR)
+- **Printable field verification checklist** (blower door target, duct
+  blaster target, insulation depths, window verification, thermal
+  imaging priorities)
+- Save, clone, compare, and print scenarios
+- **Dark mode** toggle
 
 The calculation engine is accurate to within ~5% of full Manual J 8th
 Edition for typical residential cases. It is NOT a substitute for
@@ -139,12 +150,23 @@ overview. Short version:
 ```
 src/
 ├── app/                 # Next.js App Router pages + API routes
-├── components/          # React UI (form, results, scenarios)
+├── components/
+│   ├── ui/              # Button, Input, Select, Card, Field (dark mode)
+│   ├── form/            # CalculationForm, RoomEditor, RoomList
+│   ├── results/         # ResultsPanel (sizing, warnings, room table,
+│   │                    #   checklist, references), BreakdownChart
+│   ├── ThemeToggle.tsx  # Dark mode toggle
+│   └── PrintButton.tsx  # Browser print
 └── lib/
     ├── calc/            # Pure TypeScript calculation engine
-    │   ├── engine.ts    # calculateLoads() entry point
-    │   ├── components/  # Walls, roof, windows, infiltration, etc.
-    │   ├── constants/   # Climate zones, CLTD, SCL, altitude, ducts, …
+    │   ├── engine.ts    # calculateLoads() — whole-house entry point
+    │   ├── room-engine.ts # calculateRoomLoad() — per-room calcs
+    │   ├── sizing.ts    # Equipment sizing + rule-of-thumb
+    │   ├── validation.ts # Input + result warnings
+    │   ├── checklist.ts # Field verification checklist generator
+    │   ├── components/  # walls, roof, windows, infiltration, skylight…
+    │   ├── constants/   # climate-zones, fireplace, thermal-bridging,
+    │   │                #   attic-insulation, overhang, zip-to-climate…
     │   └── presets/     # Glazing, wall, roof, foundation presets
     └── db/              # Supabase client + scenario CRUD
 supabase/

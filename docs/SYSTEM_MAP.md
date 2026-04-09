@@ -55,20 +55,25 @@ trivially testable and makes it easy to add a CLI or batch runner later.
 ```
 src/lib/calc/
 │
-├── engine.ts                    ← orchestrator, calculateLoads()
+├── engine.ts                    ← orchestrator, calculateLoads() — whole-house
+├── room-engine.ts               ← calculateRoomLoad() — per-room calculations
+├── sizing.ts                    ← equipment sizing + rule-of-thumb comparison
+├── validation.ts                ← input + result validation warnings
+├── checklist.ts                 ← field verification checklist generator
 ├── schemas.ts                   ← Zod schemas (shared with form + API)
-├── types.ts                     ← TypeScript types (re-exported)
+├── types.ts                     ← TypeScript types (room, house, result)
 │
 ├── components/                  ← PER-COMPONENT pure functions
-│   ├── walls.ts                 ← wallHeatingLoad, wallCoolingLoad, netWallArea
+│   ├── walls.ts                 ← wallHeatingLoad, wallCoolingLoad, resolveWallR (thermal bridging)
 │   ├── roof.ts                  ← roofHeatingLoad, roofCoolingLoad
 │   ├── windows.ts               ← windowHeatingConduction, windowCoolingConduction, windowSolarGain
-│   ├── infiltration.ts          ← infiltrationCFM, infiltrationSensible, infiltrationLatent
+│   ├── infiltration.ts          ← infiltrationCFM, ach50ToNaturalAch, estimateAchFromQuality
 │   ├── internal.ts              ← internalSensible, internalLatent, resolveLightingWatts
 │   ├── foundation.ts            ← foundationHeatingLoad (slab / basement / crawl branches)
-│   ├── ducts.ts                 ← ductLossMultiplier (applied as final envelope scale factor)
+│   ├── ducts.ts                 ← ductLossMultiplier (with leakagePct override)
 │   ├── ventilation.ts           ← ventilationSensible, ventilationLatent (with ERV/HRV recovery)
-│   └── garage.ts                ← garagePartitionHeating, garagePartitionCooling
+│   ├── garage.ts                ← garagePartitionHeating, garagePartitionCooling
+│   └── skylight.ts              ← skylightHeatingConduction, skylightCoolingConduction, skylightSolarGain
 │
 ├── constants/                   ← LOOKUP TABLES and physics constants
 │   ├── climate-zones.ts         ← 13 IECC zones with design temps
@@ -78,11 +83,19 @@ src/lib/calc/
 │   ├── shading.ts               ← Solar gain multipliers by shading type
 │   ├── frame.ts                 ← Window U-value multipliers by frame material
 │   ├── altitude.ts              ← Air density ratio by altitude band
-│   ├── roof-pitch.ts            ← Roof surface area multiplier by pitch
+│   ├── roof-pitch.ts            ← Roof surface area multiplier by pitch (16 values)
 │   ├── ducts.ts                 ← Duct loss fraction table (location × R)
-│   ├── occupancy.ts             ← Per-person BTU by activity level
-│   ├── lighting.ts              ← W/ft² by lighting technology
-│   └── ventilation.ts           ← Sensible + latent recovery by vent type
+│   ├── occupancy.ts             ← Per-person BTU by activity level (5 levels)
+│   ├── lighting.ts              ← W/ft² by lighting technology (5 types)
+│   ├── ventilation.ts           ← Sensible + latent recovery by vent type
+│   ├── fireplace.ts             ← Fireplace type → ACH infiltration penalty
+│   ├── thermal-bridging.ts      ← Framing % → effective wall R (parallel-path)
+│   ├── attic-insulation.ts      ← Material type → R-per-inch (6 materials)
+│   ├── overhang.ts              ← Overhang depth → solar shading factor by orientation
+│   └── zip-to-climate.ts        ← ZIP code prefix → IECC climate zone
+│
+├── utils/
+│   └── zip-lookup.ts            ← lookupClimateZoneByZip()
 │
 └── presets/                     ← FORM HELPERS that auto-fill numeric fields
     ├── window-glazing.ts        ← 8 glazing options (single/double/triple, low-e, etc.)
@@ -128,20 +141,31 @@ No database is touched for a plain calculation. Ephemeral.
 Inside `calculateLoads(input)`:
 
 ```
-1. Look up climate zone                     → dTWinter, dTSummer, humidity
-2. Look up altitude band                    → densityRatio
-3. Compute geometry                         → perimeter, volume, roofArea (pitch-adjusted)
-4. Resolve shading + frame multipliers      → shadingFactor, frameMultiplier
-5. Normalize windows to 8 orientations      → apply frame multiplier to U
-6. Compute per-component loads:
-      walls      roof      windows_cond    windows_solar_{N..NW}
-      doors      infiltration                mech_ventilation (if any)
-      internal   foundation                  garage_partition (if any)
-7. Apply duct loss multiplier to envelope   → (1 + lossFraction)
-      (excluded: internal, window solar)
-8. Aggregate totals                          → heatingTotal, coolingTotal
-9. Rank top 5 contributors for each season
-10. Return CalculationResult with meta      → climate, dT, densityRatio, duct loss, ISO timestamp
+ 1. Look up climate zone                    → dTWinter, dTSummer, humidity
+ 2. Look up altitude band                   → densityRatio
+ 3. Resolve attic R-value                   → from material + depth (or legacy R)
+ 4. Resolve wall R-value                    → apply thermal bridging if framingPct
+ 5. Compute geometry                        → perimeter, volume, roofArea (pitch)
+ 6. Resolve shading + frame + overhang      → shadingFactor, frameMultiplier, ovhFactor
+ 7. Normalize windows to 8 orientations     → apply frame multiplier to U
+ 8. Resolve infiltration ACH                → from natural/ACH50/estimate method
+ 9. Add fireplace ACH penalty               → totalACH = resolved + fireplace
+10. Compute per-component loads:
+       walls      roof      windows_cond     windows_solar_{N..NW}
+       skylights  doors     infiltration     mech_ventilation
+       internal   foundation                 garage_partition
+11. Apply duct loss multiplier to envelope  → (1 + lossFraction) with leakagePct
+       (excluded: internal, solar gains, skylights solar)
+12. Aggregate totals                        → heatingTotal, coolingTotal
+13. If rooms[] provided:
+       For each room → calculateRoomLoad()  → per-room components + WWR + warnings
+       Distribute infiltration by volume, internal by sqft
+14. Compute equipment sizing                → tons, MBH, oversizing note
+15. Compare to 20 BTU/sqft rule             → flag if >25% deviation
+16. Run validation warnings                 → input + room + result checks
+17. Generate field checklist                → blower door, ducts, insulation, windows
+18. Return CalculationResult with all       → components, rooms, sizing, warnings,
+                                               checklist, latent/sensible %, meta
 ```
 
 ## Database schema
