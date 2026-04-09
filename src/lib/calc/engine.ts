@@ -17,7 +17,10 @@ import { FRAME_U_MULTIPLIER } from '@/lib/calc/constants/frame';
 import { ALTITUDE_DENSITY_RATIO } from '@/lib/calc/constants/altitude';
 import { ROOF_PITCH_MULTIPLIER } from '@/lib/calc/constants/roof-pitch';
 import { CLTD } from '@/lib/calc/constants/cltd';
-import { netWallArea, wallHeatingLoad, wallCoolingLoad } from '@/lib/calc/components/walls';
+import { FIREPLACE_ACH_PENALTY } from '@/lib/calc/constants/fireplace';
+import { atticRValue } from '@/lib/calc/constants/attic-insulation';
+import { overhangShadingFactor } from '@/lib/calc/constants/overhang';
+import { netWallArea, resolveWallR, wallHeatingLoad, wallCoolingLoad } from '@/lib/calc/components/walls';
 import { roofHeatingLoad, roofCoolingLoad } from '@/lib/calc/components/roof';
 import {
   windowHeatingConduction,
@@ -28,6 +31,8 @@ import {
   infiltrationCFM,
   infiltrationSensible,
   infiltrationLatent,
+  ach50ToNaturalAch,
+  estimateAchFromQuality,
 } from '@/lib/calc/components/infiltration';
 import {
   internalSensible,
@@ -44,6 +49,11 @@ import {
   garagePartitionHeating,
   garagePartitionCooling,
 } from '@/lib/calc/components/garage';
+import {
+  skylightHeatingConduction,
+  skylightCoolingConduction,
+  skylightSolarGain,
+} from '@/lib/calc/components/skylight';
 
 /**
  * Normalize the windows input to a uniform per-orientation table so the
@@ -105,6 +115,28 @@ function rankContributors(
     }));
 }
 
+/**
+ * Resolve the effective natural ACH from the infiltration input.
+ * Supports three methods:
+ *   - natural_ach (legacy): use the `ach` field directly
+ *   - ach50: convert blower-door result to natural ACH
+ *   - estimate: map construction quality label to ACH
+ * Falls back to the `ach` field for backwards compatibility.
+ */
+function resolveInfiltrationACH(
+  input: CalculationInput['infiltration'],
+  stories: number
+): number {
+  const method = input.method ?? 'natural_ach';
+  if (method === 'ach50' && input.ach50 !== undefined) {
+    return ach50ToNaturalAch(input.ach50, stories);
+  }
+  if (method === 'estimate' && input.constructionQuality) {
+    return estimateAchFromQuality(input.constructionQuality);
+  }
+  return input.ach;
+}
+
 export function calculateLoads(input: CalculationInput): CalculationResult {
   const zone = getClimateZone(input.climateZoneId);
   if (!zone) {
@@ -123,15 +155,32 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
   const volume = input.house.squareFootage * input.house.ceilingHeight;
   const footprint = input.house.squareFootage / input.house.stories;
 
+  // Roof R-value: use attic insulation depth/material if provided
+  let roofR = input.envelope.roofRValue;
+  if (input.envelope.atticInsulationType && input.envelope.atticInsulationDepth) {
+    roofR = atticRValue(
+      input.envelope.atticInsulationType,
+      input.envelope.atticInsulationDepth
+    );
+  }
+
   // Roof area modulated by pitch
   const roofPitch = input.envelope.roofPitch ?? 'flat';
   const roofArea = footprint * ROOF_PITCH_MULTIPLIER[roofPitch];
+
+  // Wall R-value: apply thermal bridging if framing% provided
+  const wallR = resolveWallR({
+    rValue: input.envelope.wallRValue,
+    framingPct: input.envelope.framingPct,
+    studDepth: input.envelope.studDepth,
+  });
 
   // Shading and frame material adjustments
   const shading = input.windows.shading ?? 'none';
   const shadingFactor = SHADING_FACTORS[shading];
   const frameMaterial = input.windows.frameMaterial ?? 'vinyl';
   const frameMultiplier = FRAME_U_MULTIPLIER[frameMaterial];
+  const overhangDepth = input.windows.overhangDepth ?? 0;
 
   // Normalize windows and apply frame U multiplier
   const windowsByOrientation = normalizeWindows(input.windows);
@@ -161,12 +210,12 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
     component: 'walls',
     label: 'Walls',
     heating: wallHeatingLoad({
-      rValue: input.envelope.wallRValue,
+      rValue: wallR,
       netArea: wallNetArea,
       dT: dTWinter,
     }),
     coolingSensible: wallCoolingLoad({
-      rValue: input.envelope.wallRValue,
+      rValue: wallR,
       netArea: wallNetArea,
       mass: input.envelope.wallMass,
     }),
@@ -178,12 +227,12 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
     component: 'roof',
     label: 'Roof / Ceiling',
     heating: roofHeatingLoad({
-      rValue: input.envelope.roofRValue,
+      rValue: roofR,
       area: roofArea,
       dT: dTWinter,
     }),
     coolingSensible: roofCoolingLoad({
-      rValue: input.envelope.roofRValue,
+      rValue: roofR,
       area: roofArea,
       color: input.envelope.roofColor,
     }),
@@ -214,20 +263,68 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
     coolingLatent: 0,
   });
 
-  // ---- Windows: solar gain per orientation (with shading) ---------
+  // ---- Windows: solar gain per orientation (with shading + overhang)
   for (const o of ORIENTATIONS) {
     const w = windowsByOrientation[o];
     if (w.area <= 0) continue;
-    const solar = windowSolarGain({
-      shgc: w.shgc,
-      area: w.area,
-      orientation: o,
-    }) * shadingFactor;
+
+    // Compute overhang factor (assumes 4ft window height as default for
+    // whole-house mode; per-room mode in Phase 2 will use actual height)
+    const ovhFactor =
+      overhangDepth > 0
+        ? overhangShadingFactor(overhangDepth, 4, o)
+        : 1.0;
+
+    const solar =
+      windowSolarGain({
+        shgc: w.shgc,
+        area: w.area,
+        orientation: o,
+      }) *
+      shadingFactor *
+      ovhFactor;
+
     components.push({
       component: `windows_solar_${o}`,
       label: `Windows solar ${o}`,
       heating: 0,
       coolingSensible: solar,
+      coolingLatent: 0,
+    });
+  }
+
+  // ---- Skylights (Phase 1) ------------------------------------------
+  if (input.skylights && input.skylights.length > 0) {
+    let skyCondHeating = 0;
+    let skyCondCooling = 0;
+    let skySolar = 0;
+    for (const sky of input.skylights) {
+      skyCondHeating += skylightHeatingConduction({
+        uValue: sky.uValue,
+        area: sky.area,
+        dT: dTWinter,
+      });
+      skyCondCooling += skylightCoolingConduction({
+        uValue: sky.uValue,
+        area: sky.area,
+      });
+      skySolar += skylightSolarGain({
+        shgc: sky.shgc,
+        area: sky.area,
+      });
+    }
+    components.push({
+      component: 'skylights_conduction',
+      label: 'Skylights (conduction)',
+      heating: skyCondHeating,
+      coolingSensible: skyCondCooling,
+      coolingLatent: 0,
+    });
+    components.push({
+      component: 'skylights_solar',
+      label: 'Skylights (solar)',
+      heating: 0,
+      coolingSensible: skySolar,
       coolingLatent: 0,
     });
   }
@@ -242,11 +339,25 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
     coolingLatent: 0,
   });
 
-  // ---- Infiltration (altitude-corrected) --------------------------
-  const cfm = infiltrationCFM(input.infiltration.ach, volume);
+  // ---- Infiltration (altitude-corrected, method-resolved) ----------
+  const resolvedACH = resolveInfiltrationACH(
+    input.infiltration,
+    input.house.stories
+  );
+
+  // Add fireplace infiltration penalty
+  const fireplaceACH =
+    input.fireplace
+      ? FIREPLACE_ACH_PENALTY[input.fireplace.type]
+      : 0;
+  const totalACH = resolvedACH + fireplaceACH;
+
+  const cfm = infiltrationCFM(totalACH, volume);
   components.push({
     component: 'infiltration',
-    label: 'Infiltration',
+    label: fireplaceACH > 0
+      ? `Infiltration (incl. ${input.fireplace!.type} fireplace)`
+      : 'Infiltration',
     heating: infiltrationSensible({ cfm, dT: dTWinter, densityRatio }),
     coolingSensible: infiltrationSensible({
       cfm,
@@ -328,7 +439,14 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
   });
 
   // ---- Garage partition (optional) ---------------------------------
-  if (input.garage?.attached && input.garage.sharedWallArea > 0) {
+  // Resolve garage: new `type` field takes precedence over legacy `attached`
+  const garageAttached = input.garage
+    ? input.garage.type
+      ? input.garage.type === 'attached_unconditioned'
+      : input.garage.attached
+    : false;
+
+  if (garageAttached && input.garage && input.garage.sharedWallArea > 0) {
     components.push({
       component: 'garage_partition',
       label: 'Garage partition wall',
@@ -348,14 +466,19 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
 
   // ---- Duct losses: applied as a multiplier on totals -------------
   const ductInput = input.ducts ?? { location: 'conditioned' as const, rValue: 8 as const };
-  const ductMult = ductLossMultiplier(ductInput.location, ductInput.rValue);
+  const ductMult = ductLossMultiplier(
+    ductInput.location,
+    ductInput.rValue,
+    ductInput.leakagePct
+  );
 
   // Apply duct multiplier to every non-zero envelope component. Internal
   // and solar gains don't travel through ducts so they're excluded.
   const scaledComponents = components.map((c) => {
     if (
       c.component === 'internal' ||
-      c.component.startsWith('windows_solar_')
+      c.component.startsWith('windows_solar_') ||
+      c.component === 'skylights_solar'
     ) {
       return c;
     }
@@ -397,7 +520,11 @@ export function calculateLoads(input: CalculationInput): CalculationResult {
       dTSummer,
       altitudeBand,
       densityRatio,
-      ductLossFraction: ductLossFraction(ductInput.location, ductInput.rValue),
+      ductLossFraction: ductLossFraction(
+        ductInput.location,
+        ductInput.rValue,
+        ductInput.leakagePct
+      ),
       calculatedAt: new Date().toISOString(),
     },
     // Phase 2/3 placeholders — populated by later phases

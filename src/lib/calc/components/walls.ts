@@ -1,4 +1,8 @@
 import { CLTD, type WallMass } from '@/lib/calc/constants/cltd';
+import {
+  effectiveWallR,
+  type StudDepth,
+} from '@/lib/calc/constants/thermal-bridging';
 
 /**
  * Net wall area = gross wall area minus windows and doors.
@@ -14,6 +18,21 @@ export function netWallArea(args: {
   const gross = args.perimeter * args.ceilingHeight * args.stories;
   const net = gross - args.windowArea - args.doorArea;
   return Math.max(0, net);
+}
+
+/**
+ * Resolve the effective R-value of a wall, accounting for thermal
+ * bridging when a framing percentage is provided.
+ */
+export function resolveWallR(args: {
+  rValue: number;
+  framingPct?: number;
+  studDepth?: StudDepth;
+}): number {
+  if (args.framingPct && args.framingPct > 0) {
+    return effectiveWallR(args.rValue, args.framingPct, args.studDepth);
+  }
+  return args.rValue;
 }
 
 /**

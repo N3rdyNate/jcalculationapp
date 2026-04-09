@@ -13,6 +13,39 @@ export function infiltrationCFM(ach: number, volume: number): number {
 }
 
 /**
+ * Convert a blower-door ACH50 result to natural ACH.
+ *
+ * The divisor N accounts for climate severity, wind exposure, stories,
+ * and house tightness. For typical US conditions:
+ *   1-story: N ≈ 17
+ *   2-story: N ≈ 20
+ *   3-story: N ≈ 23
+ *
+ * Reference: ASHRAE Handbook of Fundamentals Ch. 16; LBL N-factor method.
+ */
+export function ach50ToNaturalAch(ach50: number, stories: number): number {
+  const nFactor = stories <= 1 ? 17 : stories === 2 ? 20 : 23;
+  return ach50 / nFactor;
+}
+
+/**
+ * Estimate natural ACH from construction quality label.
+ * Values match the infiltration presets.
+ */
+export function estimateAchFromQuality(
+  quality: 'leaky' | 'average' | 'tight' | 'very_tight' | 'passive'
+): number {
+  const ACH_BY_QUALITY: Record<string, number> = {
+    leaky: 1.0,
+    average: 0.5,
+    tight: 0.35,
+    very_tight: 0.18,
+    passive: 0.04,
+  };
+  return ACH_BY_QUALITY[quality] ?? 0.5;
+}
+
+/**
  * Sensible heat transfer due to air infiltration.
  *
  *   q = 1.08 * ρ * CFM * dT
