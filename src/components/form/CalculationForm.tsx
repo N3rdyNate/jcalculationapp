@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { calculationInputSchema } from '@/lib/calc/schemas';
 import type { CalculationInput, CalculationResult } from '@/lib/calc/types';
 import { CLIMATE_ZONES, getClimateZone } from '@/lib/calc/constants/climate-zones';
+import { lookupClimateZoneByZip } from '@/lib/calc/utils/zip-lookup';
 import { WINDOW_GLAZING_PRESETS, getWindowGlazingPreset } from '@/lib/calc/presets/window-glazing';
 import { WALL_ASSEMBLY_PRESETS, getWallAssemblyPreset } from '@/lib/calc/presets/wall-assembly';
 import { ROOF_ASSEMBLY_PRESETS, getRoofAssemblyPreset } from '@/lib/calc/presets/roof-assembly';
@@ -80,9 +81,29 @@ export function CalculationForm({ initialValues, onResult }: Props) {
   });
 
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [zipStatus, setZipStatus] = useState<
+    | { kind: 'idle' }
+    | { kind: 'found'; zoneId: string }
+    | { kind: 'not_found' }
+  >({ kind: 'idle' });
 
   const climateZoneId = useWatch({ control, name: 'climateZoneId' });
   const selectedZone = getClimateZone(climateZoneId);
+
+  function handleZipChange(value: string) {
+    const digits = value.replace(/\D/g, '');
+    if (digits.length < 5) {
+      setZipStatus({ kind: 'idle' });
+      return;
+    }
+    const zone = lookupClimateZoneByZip(digits);
+    if (zone) {
+      setValue('climateZoneId', zone, { shouldDirty: true });
+      setZipStatus({ kind: 'found', zoneId: zone });
+    } else {
+      setZipStatus({ kind: 'not_found' });
+    }
+  }
   const foundationType = useWatch({ control, name: 'envelope.foundationType' });
   const garageAttached = useWatch({ control, name: 'garage.attached' });
   const ventType = useWatch({ control, name: 'ventilation.type' });
@@ -154,7 +175,25 @@ export function CalculationForm({ initialValues, onResult }: Props) {
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {/* -------- Climate + altitude -------- */}
       <Card title="Climate Zone" description="Select the IECC zone and altitude band">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Field
+          label="ZIP code (optional)"
+          hint={
+            zipStatus.kind === 'found'
+              ? `Auto-selected zone ${zipStatus.zoneId}`
+              : zipStatus.kind === 'not_found'
+                ? 'ZIP not recognized — pick manually below'
+                : 'Auto-selects the climate zone'
+          }
+        >
+          <Input
+            type="text"
+            inputMode="numeric"
+            maxLength={10}
+            placeholder="e.g. 10001"
+            onChange={(e) => handleZipChange(e.target.value)}
+          />
+        </Field>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
           <Field label="Climate zone" error={errors.climateZoneId?.message}>
             <Select {...register('climateZoneId')}>
               {CLIMATE_ZONES.map((z) => (
@@ -174,7 +213,7 @@ export function CalculationForm({ initialValues, onResult }: Props) {
           </Field>
         </div>
         {selectedZone && (
-          <div className="mt-3 text-xs text-slate-600 bg-slate-50 rounded p-3 grid grid-cols-2 gap-1">
+          <div className="mt-3 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 rounded p-3 grid grid-cols-2 gap-1">
             <span>Winter design: <strong>{selectedZone.winterDesignTemp}°F</strong></span>
             <span>Summer design: <strong>{selectedZone.summerDesignTemp}°F</strong></span>
             <span>Annual avg: <strong>{selectedZone.annualAvgTemp}°F</strong></span>
@@ -260,12 +299,27 @@ export function CalculationForm({ initialValues, onResult }: Props) {
               <option value="dark">Dark (asphalt shingle)</option>
             </Select>
           </Field>
-          <Field label="Roof pitch">
+          <Field label="Roof pitch" hint="Rise over 12 in of run">
             <Select {...register('envelope.roofPitch')}>
-              <option value="flat">Flat</option>
-              <option value="low">Low slope (≤3:12)</option>
-              <option value="standard">Standard (6:12)</option>
-              <option value="steep">Steep (12:12)</option>
+              <optgroup label="Flat / low slope">
+                <option value="flat">Flat</option>
+                <option value="1_12">1/12 (shed, ≈0.3%)</option>
+                <option value="2_12">2/12 (≈1.4%)</option>
+                <option value="3_12">3/12 (≈3%)</option>
+              </optgroup>
+              <optgroup label="Standard">
+                <option value="4_12">4/12 (≈5%)</option>
+                <option value="5_12">5/12 (≈8%)</option>
+                <option value="standard">6/12 — typical residential</option>
+                <option value="7_12">7/12</option>
+                <option value="8_12">8/12</option>
+              </optgroup>
+              <optgroup label="Steep">
+                <option value="9_12">9/12</option>
+                <option value="10_12">10/12</option>
+                <option value="11_12">11/12</option>
+                <option value="12_12">12/12 (45°)</option>
+              </optgroup>
             </Select>
           </Field>
           <Field label="Attic ventilation">
@@ -402,7 +456,7 @@ export function CalculationForm({ initialValues, onResult }: Props) {
                   </Field>
                 </div>
                 <div className="mt-3">
-                  <p className="text-sm font-medium text-slate-700 mb-2">Area by orientation (ft²)</p>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Area by orientation (ft²)</p>
                   <div className="grid grid-cols-4 gap-3">
                     {(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const).map((o) => (
                       <Field key={o} label={o}>
@@ -531,25 +585,48 @@ export function CalculationForm({ initialValues, onResult }: Props) {
           </Select>
         </Field>
         <div className="grid grid-cols-2 gap-3 mt-3">
-          <Field label="Occupancy activity level">
+          <Field
+            label="Occupancy activity level"
+            hint="Most homes: Moderate. Use Light for bedrooms, Vigorous for gyms."
+          >
             <Select {...register('internal.activityLevel')}>
+              <option value="sedentary">
+                Sedentary (sleeping, reading)
+              </option>
               <option value="light">Light (seated, TV/PC)</option>
-              <option value="moderate">Moderate (standard)</option>
-              <option value="heavy">Heavy (exercise, active)</option>
+              <option value="moderate">
+                Moderate (standing, cooking) — standard
+              </option>
+              <option value="heavy">Heavy (housework, chores)</option>
+              <option value="vigorous">
+                Vigorous (exercise, dancing)
+              </option>
             </Select>
           </Field>
-          <Field label="Lighting type">
+          <Field
+            label="Lighting type"
+            hint="Newer homes are mostly LED. Mixed matches typical stock."
+          >
             <Select {...register('internal.lightingType')}>
-              <option value="incandescent">Incandescent</option>
-              <option value="fluorescent">Fluorescent</option>
-              <option value="led">LED</option>
-              <option value="mixed">Mixed</option>
+              <option value="incandescent">
+                Incandescent (2.5 W/ft²)
+              </option>
+              <option value="halogen">Halogen (2.0 W/ft²)</option>
+              <option value="fluorescent">Fluorescent (1.0 W/ft²)</option>
+              <option value="led">LED (0.5 W/ft²)</option>
+              <option value="mixed">Mixed (1.2 W/ft²)</option>
             </Select>
           </Field>
-          <Field label="Occupants (count)">
+          <Field
+            label="Occupants (count)"
+            hint="Manual J default: bedrooms + 1"
+          >
             <Input type="number" step="1" {...register('internal.occupants', { valueAsNumber: true })} />
           </Field>
-          <Field label="Appliances (W)">
+          <Field
+            label="Appliances (W)"
+            hint="Typical home: 1000–1800 W continuous"
+          >
             <Input type="number" step="50" {...register('internal.applianceWatts', { valueAsNumber: true })} />
           </Field>
           <Field label="Lighting (W, override)" hint="Used only if no lighting type is chosen">

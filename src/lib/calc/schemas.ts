@@ -13,7 +13,26 @@ export const orientationSchema = z.enum([
 
 export const wallMassSchema = z.enum(['light', 'medium', 'heavy']);
 export const roofColorSchema = z.enum(['light', 'medium', 'dark']);
-export const roofPitchSchema = z.enum(['flat', 'low', 'standard', 'steep']);
+export const roofPitchSchema = z.enum([
+  // Legacy coarse buckets (kept for backwards compat with saved scenarios)
+  'flat',
+  'low',
+  'standard',
+  'steep',
+  // Granular rise/run pitches
+  '1_12',
+  '2_12',
+  '3_12',
+  '4_12',
+  '5_12',
+  '6_12',
+  '7_12',
+  '8_12',
+  '9_12',
+  '10_12',
+  '11_12',
+  '12_12',
+]);
 export const foundationTypeSchema = z.enum([
   'slab',
   'heated_basement',
@@ -65,9 +84,16 @@ export const ventilationTypeSchema = z.enum([
   'balanced_erv',
   'balanced_hrv',
 ]);
-export const activityLevelSchema = z.enum(['light', 'moderate', 'heavy']);
+export const activityLevelSchema = z.enum([
+  'sedentary',
+  'light',
+  'moderate',
+  'heavy',
+  'vigorous',
+]);
 export const lightingTypeSchema = z.enum([
   'incandescent',
+  'halogen',
   'fluorescent',
   'led',
   'mixed',

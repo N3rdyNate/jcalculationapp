@@ -11,12 +11,14 @@
 
 export type LightingType =
   | 'incandescent'
+  | 'halogen'
   | 'fluorescent'
   | 'led'
   | 'mixed';
 
 export const LIGHTING_W_PER_SQFT: Record<LightingType, number> = {
   incandescent: 2.5,
+  halogen: 2.0,
   fluorescent: 1.0,
   led: 0.5,
   mixed: 1.2,
