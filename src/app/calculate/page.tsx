@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Field } from '@/components/ui/Field';
+import { PrintButton } from '@/components/PrintButton';
 import type { CalculationInput, CalculationResult } from '@/lib/calc/types';
 
 export default function CalculatePage() {
@@ -57,7 +58,10 @@ export default function CalculatePage() {
         />
       </div>
       <div className="lg:col-span-2">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-4 print-hide">Results</h2>
+        <div className="flex items-center justify-between mb-4 print-hide">
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Results</h2>
+          {result && <PrintButton />}
+        </div>
         <div className="sticky top-4">
           {result ? (
             <ResultsPanel
