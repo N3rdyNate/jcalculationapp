@@ -53,6 +53,108 @@ export function ResultsPanel({ result, onSave }: Props) {
         </div>
       </Card>
 
+      {/* Latent/sensible + equipment sizing */}
+      {(result.latentSensiblePct || result.equipmentSizing) && (
+        <Card title="Load summary">
+          {result.latentSensiblePct && (
+            <div className="text-sm text-slate-700 dark:text-slate-300 mb-3">
+              <span className="font-medium">Cooling split:</span>{' '}
+              {result.latentSensiblePct.sensiblePct.toFixed(0)}% sensible /{' '}
+              {result.latentSensiblePct.latentPct.toFixed(0)}% latent
+            </div>
+          )}
+          {result.equipmentSizing && (
+            <div className="text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Recommended cooling</span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">
+                  {result.equipmentSizing.coolingTons} tons ({formatBtuh(result.equipmentSizing.coolingBtuh)})
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Recommended heating</span>
+                <span className="font-medium text-slate-900 dark:text-slate-100">
+                  {result.equipmentSizing.heatingMBH} MBH ({formatBtuh(result.equipmentSizing.heatingBtuh)})
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 italic">
+                {result.equipmentSizing.note}
+              </p>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Rule-of-thumb comparison */}
+      {result.ruleOfThumbComparison?.flagged && (
+        <Card>
+          <div className="flex items-start gap-2">
+            <span className="text-amber-500 text-lg">⚠</span>
+            <div className="text-sm">
+              <p className="font-medium text-slate-900 dark:text-slate-100">
+                Load differs from 20 BTU/sqft rule of thumb
+              </p>
+              <p className="text-slate-600 dark:text-slate-400 mt-1">
+                {result.ruleOfThumbComparison.explanation}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Validation warnings */}
+      {result.warnings.length > 0 && (
+        <Card title="Warnings">
+          <ul className="space-y-2 text-sm">
+            {result.warnings.map((w, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className={
+                  w.severity === 'error' ? 'text-red-500' :
+                  w.severity === 'warn' ? 'text-amber-500' : 'text-blue-500'
+                }>
+                  {w.severity === 'error' ? '✕' : w.severity === 'warn' ? '⚠' : 'ℹ'}
+                </span>
+                <span className="text-slate-700 dark:text-slate-300">
+                  {w.room ? `[${w.room}] ` : ''}{w.message}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {/* Room-by-room results */}
+      {result.rooms.length > 0 && (
+        <Card title="Room-by-room loads">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left border-b border-slate-200 dark:border-slate-700">
+                  <th className="py-2 font-medium text-slate-600 dark:text-slate-400">Room</th>
+                  <th className="py-2 font-medium text-slate-600 dark:text-slate-400 text-right">Sq Ft</th>
+                  <th className="py-2 font-medium text-slate-600 dark:text-slate-400 text-right">Heating</th>
+                  <th className="py-2 font-medium text-slate-600 dark:text-slate-400 text-right">Cooling</th>
+                  <th className="py-2 font-medium text-slate-600 dark:text-slate-400 text-right">WWR</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.rooms.map((r) => (
+                  <tr key={r.name} className="border-b border-slate-100 dark:border-slate-800">
+                    <td className="py-2 text-slate-700 dark:text-slate-300">{r.name}</td>
+                    <td className="py-2 text-right text-slate-900 dark:text-slate-100">{r.squareFootage}</td>
+                    <td className="py-2 text-right text-slate-900 dark:text-slate-100">{formatBtuh(r.heating)}</td>
+                    <td className="py-2 text-right text-slate-900 dark:text-slate-100">{formatBtuh(r.coolingTotal)}</td>
+                    <td className="py-2 text-right text-slate-900 dark:text-slate-100">
+                      {(r.windowToWallRatio * 100).toFixed(0)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
       <Card title="Component breakdown">
         <BreakdownChart components={result.components} />
       </Card>
@@ -124,6 +226,32 @@ export function ResultsPanel({ result, onSave }: Props) {
           </table>
         </div>
       </Card>
+
+      {/* Field verification checklist */}
+      {result.fieldChecklist.length > 0 && (
+        <Card title="Field verification checklist" description="Print this page to take on-site">
+          <div className="space-y-3">
+            {(() => {
+              const categories = [...new Set(result.fieldChecklist.map((i) => i.category))];
+              return categories.map((cat) => (
+                <div key={cat}>
+                  <p className="text-xs font-semibold uppercase text-slate-600 dark:text-slate-400 mb-1">{cat}</p>
+                  <ul className="space-y-1">
+                    {result.fieldChecklist
+                      .filter((i) => i.category === cat)
+                      .map((item, j) => (
+                        <li key={j} className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                          <input type="checkbox" className="mt-1 shrink-0" />
+                          <span>{item.room ? `[${item.room}] ` : ''}{item.item}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              ));
+            })()}
+          </div>
+        </Card>
+      )}
 
       <Card title="Methodology" description="Simplified Manual J / ASHRAE">
         <dl className="text-xs text-slate-600 dark:text-slate-400 space-y-1">

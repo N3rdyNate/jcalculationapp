@@ -19,6 +19,8 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Button } from '@/components/ui/Button';
 import { useState } from 'react';
+import { RoomList } from '@/components/form/RoomList';
+import type { RoomInput } from '@/lib/calc/types';
 
 const DEFAULT_VALUES: CalculationInput = {
   climateZoneId: '4A',
@@ -895,6 +897,18 @@ export function CalculationForm({ initialValues, onResult }: Props) {
           </Field>
         </div>
       </Card>
+
+      {/* -------- Room-by-room -------- */}
+      <Controller
+        control={control}
+        name="rooms"
+        render={({ field }) => (
+          <RoomList
+            rooms={field.value ?? []}
+            onChange={(rooms: RoomInput[]) => field.onChange(rooms.length > 0 ? rooms : undefined)}
+          />
+        )}
+      />
 
       {submitError && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-3">
