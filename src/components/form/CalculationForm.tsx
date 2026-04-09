@@ -20,6 +20,7 @@ import { useState } from 'react';
 
 const DEFAULT_VALUES: CalculationInput = {
   climateZoneId: '4A',
+  altitude: 'sea_level',
   house: {
     squareFootage: 2000,
     ceilingHeight: 8,
@@ -33,17 +34,32 @@ const DEFAULT_VALUES: CalculationInput = {
     doorUValue: 0.4,
     roofRValue: 30,
     roofColor: 'medium',
+    roofPitch: 'standard',
+    atticVented: true,
     foundationType: 'slab',
     foundationFactor: 0.55,
+    basementConditioning: 'conditioned',
+    floorInsulated: true,
   },
   windows: {
     mode: 'global',
     uValue: 0.28,
     shgc: 0.38,
     areaByOrientation: { N: 75, E: 75, S: 75, W: 75 },
+    shading: 'none',
+    frameMaterial: 'vinyl',
   },
   infiltration: { ach: 0.5 },
-  internal: { occupants: 4, applianceWatts: 1200, lightingWatts: 800 },
+  internal: {
+    occupants: 4,
+    applianceWatts: 1200,
+    lightingWatts: 800,
+    activityLevel: 'moderate',
+    lightingType: 'mixed',
+  },
+  ducts: { location: 'conditioned', rValue: 8 },
+  ventilation: { type: 'none', cfm: 0 },
+  garage: { attached: false, sharedWallArea: 0, wallRValue: 11 },
 };
 
 interface Props {
@@ -68,6 +84,8 @@ export function CalculationForm({ initialValues, onResult }: Props) {
   const climateZoneId = useWatch({ control, name: 'climateZoneId' });
   const selectedZone = getClimateZone(climateZoneId);
   const foundationType = useWatch({ control, name: 'envelope.foundationType' });
+  const garageAttached = useWatch({ control, name: 'garage.attached' });
+  const ventType = useWatch({ control, name: 'ventilation.type' });
 
   async function onSubmit(data: CalculationInput) {
     setSubmitError(null);
@@ -88,11 +106,10 @@ export function CalculationForm({ initialValues, onResult }: Props) {
     }
   }
 
-  // Preset handlers -------------------------------------------------
+  // ---- Preset handlers -------------------------------------------
   function applyWindowPreset(id: string) {
     const p = getWindowGlazingPreset(id);
     if (!p) return;
-    setValue('windows.mode', 'global');
     setValue('windows.uValue', p.uValue);
     setValue('windows.shgc', p.shgc);
   }
@@ -135,16 +152,27 @@ export function CalculationForm({ initialValues, onResult }: Props) {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <Card title="Climate Zone" description="Select the IECC zone for this location">
-        <Field label="Climate zone" error={errors.climateZoneId?.message}>
-          <Select {...register('climateZoneId')}>
-            {CLIMATE_ZONES.map((z) => (
-              <option key={z.id} value={z.id}>
-                {z.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
+      {/* -------- Climate + altitude -------- */}
+      <Card title="Climate Zone" description="Select the IECC zone and altitude band">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Field label="Climate zone" error={errors.climateZoneId?.message}>
+            <Select {...register('climateZoneId')}>
+              {CLIMATE_ZONES.map((z) => (
+                <option key={z.id} value={z.id}>
+                  {z.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Altitude" hint="Air density correction">
+            <Select {...register('altitude')}>
+              <option value="sea_level">Sea level</option>
+              <option value="2000_ft">2,000 ft</option>
+              <option value="5000_ft">5,000 ft</option>
+              <option value="higher">Higher (≥8,000 ft)</option>
+            </Select>
+          </Field>
+        </div>
         {selectedZone && (
           <div className="mt-3 text-xs text-slate-600 bg-slate-50 rounded p-3 grid grid-cols-2 gap-1">
             <span>Winter design: <strong>{selectedZone.winterDesignTemp}°F</strong></span>
@@ -155,6 +183,7 @@ export function CalculationForm({ initialValues, onResult }: Props) {
         )}
       </Card>
 
+      {/* -------- House dimensions -------- */}
       <Card title="House Dimensions">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Square footage" error={errors.house?.squareFootage?.message}>
@@ -176,7 +205,8 @@ export function CalculationForm({ initialValues, onResult }: Props) {
         </div>
       </Card>
 
-      <Card title="Walls" description="Pick an assembly or enter custom R and mass">
+      {/* -------- Walls -------- */}
+      <Card title="Walls">
         <Field label="Wall assembly preset">
           <Select defaultValue="" onChange={(e) => applyWallPreset(e.target.value)}>
             <option value="">— Choose a preset —</option>
@@ -188,25 +218,26 @@ export function CalculationForm({ initialValues, onResult }: Props) {
           </Select>
         </Field>
         <div className="grid grid-cols-2 gap-3 mt-3">
-          <Field label="Effective R-value" error={errors.envelope?.wallRValue?.message}>
+          <Field label="Effective R-value">
             <Input type="number" step="0.5" {...register('envelope.wallRValue', { valueAsNumber: true })} />
           </Field>
-          <Field label="Thermal mass" error={errors.envelope?.wallMass?.message}>
+          <Field label="Thermal mass">
             <Select {...register('envelope.wallMass')}>
               <option value="light">Light (frame)</option>
               <option value="medium">Medium (brick veneer)</option>
               <option value="heavy">Heavy (masonry)</option>
             </Select>
           </Field>
-          <Field label="Door area (ft²)" error={errors.envelope?.doorArea?.message}>
+          <Field label="Door area (ft²)">
             <Input type="number" step="1" {...register('envelope.doorArea', { valueAsNumber: true })} />
           </Field>
-          <Field label="Door U-value" error={errors.envelope?.doorUValue?.message}>
+          <Field label="Door U-value">
             <Input type="number" step="0.05" {...register('envelope.doorUValue', { valueAsNumber: true })} />
           </Field>
         </div>
       </Card>
 
+      {/* -------- Roof -------- */}
       <Card title="Roof / Ceiling">
         <Field label="Roof assembly preset">
           <Select defaultValue="" onChange={(e) => applyRoofPreset(e.target.value)}>
@@ -219,19 +250,38 @@ export function CalculationForm({ initialValues, onResult }: Props) {
           </Select>
         </Field>
         <div className="grid grid-cols-2 gap-3 mt-3">
-          <Field label="Effective R-value" error={errors.envelope?.roofRValue?.message}>
+          <Field label="Effective R-value">
             <Input type="number" step="1" {...register('envelope.roofRValue', { valueAsNumber: true })} />
           </Field>
-          <Field label="Roof color" error={errors.envelope?.roofColor?.message}>
+          <Field label="Roof color">
             <Select {...register('envelope.roofColor')}>
               <option value="light">Light / reflective</option>
               <option value="medium">Medium (tan, gray)</option>
               <option value="dark">Dark (asphalt shingle)</option>
             </Select>
           </Field>
+          <Field label="Roof pitch">
+            <Select {...register('envelope.roofPitch')}>
+              <option value="flat">Flat</option>
+              <option value="low">Low slope (≤3:12)</option>
+              <option value="standard">Standard (6:12)</option>
+              <option value="steep">Steep (12:12)</option>
+            </Select>
+          </Field>
+          <Field label="Attic ventilation">
+            <Select
+              {...register('envelope.atticVented', {
+                setValueAs: (v) => v === 'true',
+              })}
+            >
+              <option value="true">Vented</option>
+              <option value="false">Unvented / sealed</option>
+            </Select>
+          </Field>
         </div>
       </Card>
 
+      {/* -------- Foundation -------- */}
       <Card title="Foundation">
         <Field label="Foundation preset">
           <Select defaultValue="" onChange={(e) => applyFoundationPreset(e.target.value)}>
@@ -244,25 +294,47 @@ export function CalculationForm({ initialValues, onResult }: Props) {
           </Select>
         </Field>
         <div className="grid grid-cols-2 gap-3 mt-3">
-          <Field label="Type" error={errors.envelope?.foundationType?.message}>
+          <Field label="Type">
             <Select {...register('envelope.foundationType')}>
               <option value="slab">Slab-on-grade</option>
+              <option value="vented_crawlspace">Vented crawlspace</option>
+              <option value="unvented_crawlspace">Unvented crawlspace</option>
               <option value="heated_basement">Heated basement</option>
-              <option value="crawlspace">Crawlspace</option>
+              <option value="unheated_basement">Unheated basement</option>
             </Select>
           </Field>
           <Field
             label={foundationType === 'slab' ? 'F-factor' : 'Effective U'}
             hint={foundationType === 'slab' ? 'BTU/(hr·ft·°F)' : 'BTU/(hr·ft²·°F)'}
-            error={errors.envelope?.foundationFactor?.message}
           >
             <Input type="number" step="0.01" {...register('envelope.foundationFactor', { valueAsNumber: true })} />
+          </Field>
+          {(foundationType === 'heated_basement' ||
+            foundationType === 'unheated_basement') && (
+            <Field label="Basement conditioning">
+              <Select {...register('envelope.basementConditioning')}>
+                <option value="conditioned">Conditioned</option>
+                <option value="semi">Semi-conditioned</option>
+                <option value="unconditioned">Unconditioned</option>
+              </Select>
+            </Field>
+          )}
+          <Field label="Floor insulation">
+            <Select
+              {...register('envelope.floorInsulated', {
+                setValueAs: (v) => v === 'true',
+              })}
+            >
+              <option value="true">Yes (insulated)</option>
+              <option value="false">No</option>
+            </Select>
           </Field>
         </div>
       </Card>
 
-      <Card title="Windows" description="Glazing type and area by orientation">
-        <Field label="Glazing preset (applies to all orientations)">
+      {/* -------- Windows -------- */}
+      <Card title="Windows" description="Glazing type, frame material, shading, and area by orientation">
+        <Field label="Glazing preset">
           <Select defaultValue="" onChange={(e) => applyWindowPreset(e.target.value)}>
             <option value="">— Choose a preset —</option>
             {WINDOW_GLAZING_PRESETS.map((p) => (
@@ -287,10 +359,7 @@ export function CalculationForm({ initialValues, onResult }: Props) {
                       step="0.01"
                       value={value.uValue}
                       onChange={(e) =>
-                        field.onChange({
-                          ...value,
-                          uValue: Number(e.target.value),
-                        })
+                        field.onChange({ ...value, uValue: Number(e.target.value) })
                       }
                     />
                   </Field>
@@ -300,23 +369,47 @@ export function CalculationForm({ initialValues, onResult }: Props) {
                       step="0.01"
                       value={value.shgc}
                       onChange={(e) =>
-                        field.onChange({
-                          ...value,
-                          shgc: Number(e.target.value),
-                        })
+                        field.onChange({ ...value, shgc: Number(e.target.value) })
                       }
                     />
+                  </Field>
+                  <Field label="Frame material">
+                    <Select
+                      value={value.frameMaterial ?? 'vinyl'}
+                      onChange={(e) =>
+                        field.onChange({ ...value, frameMaterial: e.target.value as 'wood' | 'vinyl' | 'aluminum' | 'fiberglass' })
+                      }
+                    >
+                      <option value="wood">Wood</option>
+                      <option value="vinyl">Vinyl</option>
+                      <option value="aluminum">Aluminum</option>
+                      <option value="fiberglass">Fiberglass</option>
+                    </Select>
+                  </Field>
+                  <Field label="Shading">
+                    <Select
+                      value={value.shading ?? 'none'}
+                      onChange={(e) =>
+                        field.onChange({ ...value, shading: e.target.value as 'none' | 'interior_blinds' | 'exterior_blinds' | 'awnings' | 'trees' })
+                      }
+                    >
+                      <option value="none">None</option>
+                      <option value="interior_blinds">Interior blinds</option>
+                      <option value="exterior_blinds">Exterior blinds</option>
+                      <option value="awnings">Awnings</option>
+                      <option value="trees">Trees</option>
+                    </Select>
                   </Field>
                 </div>
                 <div className="mt-3">
                   <p className="text-sm font-medium text-slate-700 mb-2">Area by orientation (ft²)</p>
                   <div className="grid grid-cols-4 gap-3">
-                    {(['N', 'E', 'S', 'W'] as const).map((o) => (
+                    {(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const).map((o) => (
                       <Field key={o} label={o}>
                         <Input
                           type="number"
                           step="1"
-                          value={value.areaByOrientation[o]}
+                          value={value.areaByOrientation[o] ?? 0}
                           onChange={(e) =>
                             field.onChange({
                               ...value,
@@ -337,7 +430,8 @@ export function CalculationForm({ initialValues, onResult }: Props) {
         />
       </Card>
 
-      <Card title="Infiltration">
+      {/* -------- Infiltration -------- */}
+      <Card title="Infiltration" description="Construction quality / air tightness">
         <Field label="Tightness preset">
           <Select defaultValue="" onChange={(e) => applyInfiltrationPreset(e.target.value)}>
             <option value="">— Choose a preset —</option>
@@ -348,11 +442,83 @@ export function CalculationForm({ initialValues, onResult }: Props) {
             ))}
           </Select>
         </Field>
-        <Field label="Natural ACH" className="mt-3" error={errors.infiltration?.ach?.message}>
+        <Field label="Natural ACH" className="mt-3">
           <Input type="number" step="0.05" {...register('infiltration.ach', { valueAsNumber: true })} />
         </Field>
       </Card>
 
+      {/* -------- Mechanical ventilation -------- */}
+      <Card title="Mechanical Ventilation">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Type">
+            <Select {...register('ventilation.type')}>
+              <option value="none">None</option>
+              <option value="exhaust_only">Exhaust only</option>
+              <option value="supply_only">Supply only</option>
+              <option value="balanced_erv">Balanced ERV (sensible + latent recovery)</option>
+              <option value="balanced_hrv">Balanced HRV (sensible recovery)</option>
+            </Select>
+          </Field>
+          <Field label="CFM" hint="0 if none">
+            <Input
+              type="number"
+              step="5"
+              disabled={ventType === 'none'}
+              {...register('ventilation.cfm', { valueAsNumber: true })}
+            />
+          </Field>
+        </div>
+      </Card>
+
+      {/* -------- Ducts -------- */}
+      <Card title="Ducts">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Duct location">
+            <Select {...register('ducts.location')}>
+              <option value="conditioned">Inside conditioned space</option>
+              <option value="attic">Attic</option>
+              <option value="garage">Garage</option>
+              <option value="crawlspace">Crawlspace</option>
+            </Select>
+          </Field>
+          <Field label="Duct insulation">
+            <Select {...register('ducts.rValue', { valueAsNumber: true })}>
+              <option value={0}>R-0 (uninsulated)</option>
+              <option value={4}>R-4</option>
+              <option value={8}>R-8</option>
+              <option value={15}>R-15</option>
+            </Select>
+          </Field>
+        </div>
+      </Card>
+
+      {/* -------- Garage -------- */}
+      <Card title="Attached Garage">
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Attached?">
+            <Select
+              {...register('garage.attached', {
+                setValueAs: (v) => v === 'true',
+              })}
+            >
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </Select>
+          </Field>
+          {garageAttached && (
+            <>
+              <Field label="Shared wall area (ft²)">
+                <Input type="number" step="10" {...register('garage.sharedWallArea', { valueAsNumber: true })} />
+              </Field>
+              <Field label="Partition R-value">
+                <Input type="number" step="1" {...register('garage.wallRValue', { valueAsNumber: true })} />
+              </Field>
+            </>
+          )}
+        </div>
+      </Card>
+
+      {/* -------- Internal loads -------- */}
       <Card title="Internal Loads">
         <Field label="Lifestyle preset">
           <Select defaultValue="" onChange={(e) => applyInternalPreset(e.target.value)}>
@@ -364,14 +530,29 @@ export function CalculationForm({ initialValues, onResult }: Props) {
             ))}
           </Select>
         </Field>
-        <div className="grid grid-cols-3 gap-3 mt-3">
-          <Field label="Occupants" error={errors.internal?.occupants?.message}>
+        <div className="grid grid-cols-2 gap-3 mt-3">
+          <Field label="Occupancy activity level">
+            <Select {...register('internal.activityLevel')}>
+              <option value="light">Light (seated, TV/PC)</option>
+              <option value="moderate">Moderate (standard)</option>
+              <option value="heavy">Heavy (exercise, active)</option>
+            </Select>
+          </Field>
+          <Field label="Lighting type">
+            <Select {...register('internal.lightingType')}>
+              <option value="incandescent">Incandescent</option>
+              <option value="fluorescent">Fluorescent</option>
+              <option value="led">LED</option>
+              <option value="mixed">Mixed</option>
+            </Select>
+          </Field>
+          <Field label="Occupants (count)">
             <Input type="number" step="1" {...register('internal.occupants', { valueAsNumber: true })} />
           </Field>
-          <Field label="Appliances (W)" error={errors.internal?.applianceWatts?.message}>
+          <Field label="Appliances (W)">
             <Input type="number" step="50" {...register('internal.applianceWatts', { valueAsNumber: true })} />
           </Field>
-          <Field label="Lighting (W)" error={errors.internal?.lightingWatts?.message}>
+          <Field label="Lighting (W, override)" hint="Used only if no lighting type is chosen">
             <Input type="number" step="50" {...register('internal.lightingWatts', { valueAsNumber: true })} />
           </Field>
         </div>

@@ -15,31 +15,34 @@ export function infiltrationCFM(ach: number, volume: number): number {
 /**
  * Sensible heat transfer due to air infiltration.
  *
- *   q = 1.08 * CFM * dT
+ *   q = 1.08 * ρ * CFM * dT
  *
- * The constant 1.08 bundles: air density (0.075 lb/ft³)
- *                          * specific heat (0.24 BTU/lb·°F)
- *                          * 60 min/hr
+ * Where ρ is the altitude density ratio (1.0 at sea level, lower at
+ * higher elevation). The baseline 1.08 constant bundles air density at
+ * sea level, specific heat, and min-to-hr conversion.
  */
 export function infiltrationSensible(args: {
   cfm: number;
   dT: number;
+  densityRatio?: number;
 }): number {
-  return AIR_SENSIBLE_CONSTANT * args.cfm * args.dT;
+  const rho = args.densityRatio ?? 1.0;
+  return AIR_SENSIBLE_CONSTANT * rho * args.cfm * args.dT;
 }
 
 /**
  * Latent heat transfer due to moisture entering with infiltrating air.
  *
- *   q = 0.68 * CFM * dW_grains
+ *   q = 0.68 * ρ * CFM * dW_grains
  *
  * where dW_grains is the difference in humidity ratio between outdoor
- * and indoor air, expressed in grains of moisture per lb dry air.
- * Cooling only.
+ * and indoor air, in grains of moisture per lb dry air. Cooling only.
  */
 export function infiltrationLatent(args: {
   cfm: number;
   humidityRatioDelta: number;
+  densityRatio?: number;
 }): number {
-  return AIR_LATENT_CONSTANT * args.cfm * args.humidityRatioDelta;
+  const rho = args.densityRatio ?? 1.0;
+  return AIR_LATENT_CONSTANT * rho * args.cfm * args.humidityRatioDelta;
 }

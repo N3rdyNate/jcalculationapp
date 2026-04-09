@@ -28,8 +28,14 @@ describe('internalSensible', () => {
 });
 
 describe('internalLatent', () => {
-  it('200 BTU/hr per occupant', () => {
-    expect(internalLatent(4)).toBe(800);
-    expect(internalLatent(0)).toBe(0);
+  it('200 BTU/hr per occupant at moderate activity (default)', () => {
+    expect(internalLatent({ occupants: 4 })).toBe(800);
+    expect(internalLatent({ occupants: 0 })).toBe(0);
+  });
+
+  it('heavy activity increases latent per person', () => {
+    const moderate = internalLatent({ occupants: 4, activityLevel: 'moderate' });
+    const heavy = internalLatent({ occupants: 4, activityLevel: 'heavy' });
+    expect(heavy).toBeGreaterThan(moderate);
   });
 });

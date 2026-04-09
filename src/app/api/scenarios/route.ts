@@ -4,12 +4,17 @@ import { calculateLoads } from '@/lib/calc/engine';
 import { createScenario, listScenarios } from '@/lib/db/scenarios';
 
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const limitStr = url.searchParams.get('limit');
-  const climate = url.searchParams.get('climate') ?? undefined;
-  const limit = limitStr ? Number(limitStr) : undefined;
-  const rows = listScenarios({ limit, climateZone: climate });
-  return NextResponse.json(rows);
+  try {
+    const url = new URL(req.url);
+    const limitStr = url.searchParams.get('limit');
+    const climate = url.searchParams.get('climate') ?? undefined;
+    const limit = limitStr ? Number(limitStr) : undefined;
+    const rows = await listScenarios({ limit, climateZone: climate });
+    return NextResponse.json(rows);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to list';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {
@@ -34,7 +39,7 @@ export async function POST(req: Request) {
   try {
     // Server re-runs the engine — never trust client-supplied results
     const result = calculateLoads(parsed.data.input);
-    const row = createScenario({
+    const row = await createScenario({
       name: parsed.data.name,
       description: parsed.data.description,
       input: parsed.data.input,
@@ -43,6 +48,6 @@ export async function POST(req: Request) {
     return NextResponse.json(row, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Save failed';
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -5,7 +5,12 @@
  * (basement/crawl) used in the heating calc.
  */
 
-export type FoundationType = 'slab' | 'heated_basement' | 'crawlspace';
+export type FoundationType =
+  | 'slab'
+  | 'heated_basement'
+  | 'unheated_basement'
+  | 'vented_crawlspace'
+  | 'unvented_crawlspace';
 
 export interface FoundationPreset {
   id: string;
@@ -76,10 +81,17 @@ export const FOUNDATION_PRESETS: FoundationPreset[] = [
     factor: 0.09,
   },
   {
+    id: 'unheated_basement',
+    label: 'Unheated basement',
+    description: 'Basement is outside the conditioned envelope',
+    type: 'unheated_basement',
+    factor: 0.15,
+  },
+  {
     id: 'crawl_vented_r19_floor',
     label: 'Vented crawl, R-19 floor above',
     description: 'R-19 batts in floor joists over vented crawl',
-    type: 'crawlspace',
+    type: 'vented_crawlspace',
     factor: 0.053, // 1/R-19 ≈ 0.053
     crawlFactor: 0.5,
   },
@@ -87,7 +99,7 @@ export const FOUNDATION_PRESETS: FoundationPreset[] = [
     id: 'crawl_sealed_r10_wall',
     label: 'Sealed crawl, R-10 walls',
     description: 'Encapsulated crawl with R-10 wall insulation',
-    type: 'crawlspace',
+    type: 'unvented_crawlspace',
     factor: 0.1,
     crawlFactor: 1.0,
   },

@@ -21,9 +21,14 @@ export async function POST(req: Request) {
     );
   }
 
-  const scenarios = getScenariosByIds(parsed.data.ids);
-  if (scenarios.length === 0) {
-    return NextResponse.json({ error: 'No scenarios found' }, { status: 404 });
+  try {
+    const scenarios = await getScenariosByIds(parsed.data.ids);
+    if (scenarios.length === 0) {
+      return NextResponse.json({ error: 'No scenarios found' }, { status: 404 });
+    }
+    return NextResponse.json({ scenarios });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-  return NextResponse.json({ scenarios });
 }

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 
 export const dynamic = 'force-dynamic';
 
-export default function ScenarioDetailPage({
+export default async function ScenarioDetailPage({
   params,
 }: {
   params: { id: string };
@@ -15,7 +15,7 @@ export default function ScenarioDetailPage({
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) notFound();
 
-  const scenario = getScenario(id);
+  const scenario = await getScenario(id);
   if (!scenario) notFound();
 
   return (

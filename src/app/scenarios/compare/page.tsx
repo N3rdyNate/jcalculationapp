@@ -6,7 +6,7 @@ import { formatBtuh, formatTons } from '@/lib/utils/format';
 
 export const dynamic = 'force-dynamic';
 
-export default function ComparePage({
+export default async function ComparePage({
   searchParams,
 }: {
   searchParams: { ids?: string };
@@ -17,7 +17,7 @@ export default function ComparePage({
     .map((s) => Number(s))
     .filter((n) => Number.isInteger(n) && n > 0);
 
-  const scenarios = ids.length > 0 ? getScenariosByIds(ids) : [];
+  const scenarios = ids.length > 0 ? await getScenariosByIds(ids) : [];
 
   // Preserve ordering from query string
   const ordered = ids

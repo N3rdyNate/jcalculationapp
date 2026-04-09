@@ -33,7 +33,7 @@ describe('foundationHeatingLoad', () => {
     // 0.053 * 2000 * 70 * 0.5 = 3710
     expect(
       foundationHeatingLoad({
-        type: 'crawlspace',
+        type: 'vented_crawlspace',
         factor: 0.053,
         perimeter: 180,
         floorArea: 2000,
@@ -41,6 +41,42 @@ describe('foundationHeatingLoad', () => {
         crawlFactor: 0.5,
       })
     ).toBeCloseTo(3710, 0);
+  });
+
+  it('unheated basement is ~half a heated basement', () => {
+    const heated = foundationHeatingLoad({
+      type: 'heated_basement',
+      factor: 0.12,
+      perimeter: 180,
+      floorArea: 2000,
+      dT: 70,
+      groundDT: 40,
+    });
+    const unheated = foundationHeatingLoad({
+      type: 'unheated_basement',
+      factor: 0.12,
+      perimeter: 180,
+      floorArea: 2000,
+      dT: 70,
+      groundDT: 40,
+    });
+    expect(unheated).toBeCloseTo(heated * 0.5, 1);
+  });
+
+  it('semi-conditioned basement is between conditioned and unconditioned', () => {
+    const base = {
+      type: 'heated_basement' as const,
+      factor: 0.12,
+      perimeter: 180,
+      floorArea: 2000,
+      dT: 70,
+      groundDT: 40,
+    };
+    const cond = foundationHeatingLoad({ ...base, basementConditioning: 'conditioned' });
+    const semi = foundationHeatingLoad({ ...base, basementConditioning: 'semi' });
+    const unc = foundationHeatingLoad({ ...base, basementConditioning: 'unconditioned' });
+    expect(unc).toBeLessThan(semi);
+    expect(semi).toBeLessThan(cond);
   });
 
   it('better slab insulation → lower heating load', () => {

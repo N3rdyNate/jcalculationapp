@@ -9,11 +9,17 @@ export async function GET(
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
   }
-  const row = getScenario(id);
-  if (!row) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  try {
+    const row = await getScenario(id);
+    if (!row) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+    return NextResponse.json(row);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-  return NextResponse.json(row);
 }
 
 export async function DELETE(
@@ -24,9 +30,15 @@ export async function DELETE(
   if (!Number.isInteger(id) || id <= 0) {
     return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
   }
-  const ok = deleteScenario(id);
-  if (!ok) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  try {
+    const ok = await deleteScenario(id);
+    if (!ok) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-  return NextResponse.json({ ok: true });
 }

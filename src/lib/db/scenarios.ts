@@ -1,4 +1,4 @@
-import { db } from '@/lib/db/client';
+import { getSupabaseAdmin } from '@/lib/db/client';
 import type { CalculationInput, CalculationResult } from '@/lib/calc/types';
 
 export interface ScenarioRow {
@@ -19,8 +19,8 @@ interface ScenarioDBRow {
   id: number;
   name: string;
   description: string | null;
-  input_json: string;
-  result_json: string;
+  input_json: CalculationInput;
+  result_json: CalculationResult;
   heating_total: number;
   cooling_total: number;
   climate_zone: string;
@@ -34,8 +34,8 @@ function rowToScenario(row: ScenarioDBRow): ScenarioRow {
     id: row.id,
     name: row.name,
     description: row.description,
-    input: JSON.parse(row.input_json) as CalculationInput,
-    result: JSON.parse(row.result_json) as CalculationResult,
+    input: row.input_json,
+    result: row.result_json,
     heatingTotal: row.heating_total,
     coolingTotal: row.cooling_total,
     climateZone: row.climate_zone,
@@ -45,77 +45,112 @@ function rowToScenario(row: ScenarioDBRow): ScenarioRow {
   };
 }
 
-export function createScenario(args: {
+export async function createScenario(args: {
   name: string;
   description?: string;
   input: CalculationInput;
   result: CalculationResult;
-}): ScenarioRow {
-  const stmt = db.prepare(`
-    INSERT INTO scenarios (
-      name, description, input_json, result_json,
-      heating_total, cooling_total, climate_zone, square_footage
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const info = stmt.run(
-    args.name,
-    args.description ?? null,
-    JSON.stringify(args.input),
-    JSON.stringify(args.result),
-    args.result.heatingTotal,
-    args.result.coolingTotal,
-    args.input.climateZoneId,
-    args.input.house.squareFootage
-  );
-  // Also log to calculation_history
-  db.prepare(`
-    INSERT INTO calculation_history (scenario_id, input_json, result_json)
-    VALUES (?, ?, ?)
-  `).run(
-    info.lastInsertRowid,
-    JSON.stringify(args.input),
-    JSON.stringify(args.result)
-  );
-  return getScenario(info.lastInsertRowid as number)!;
+}): Promise<ScenarioRow> {
+  const db = getSupabaseAdmin();
+
+  const { data, error } = await db
+    .from('scenarios')
+    .insert({
+      name: args.name,
+      description: args.description ?? null,
+      input_json: args.input,
+      result_json: args.result,
+      heating_total: args.result.heatingTotal,
+      cooling_total: args.result.coolingTotal,
+      climate_zone: args.input.climateZoneId,
+      square_footage: args.input.house.squareFootage,
+    })
+    .select()
+    .single();
+
+  if (error || !data) {
+    throw new Error(`Failed to save scenario: ${error?.message ?? 'unknown error'}`);
+  }
+
+  // Log to calculation_history (fire-and-forget; don't block the save response
+  // if history logging fails)
+  void db
+    .from('calculation_history')
+    .insert({
+      scenario_id: data.id,
+      input_json: args.input,
+      result_json: args.result,
+    })
+    .then(({ error: histErr }) => {
+      if (histErr) {
+        console.error('Failed to log calculation history:', histErr.message);
+      }
+    });
+
+  return rowToScenario(data as ScenarioDBRow);
 }
 
-export function listScenarios(opts?: {
+export async function listScenarios(opts?: {
   limit?: number;
   climateZone?: string;
-}): ScenarioRow[] {
+}): Promise<ScenarioRow[]> {
+  const db = getSupabaseAdmin();
   const limit = opts?.limit ?? 100;
-  let rows: ScenarioDBRow[];
+
+  let query = db
+    .from('scenarios')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
   if (opts?.climateZone) {
-    rows = db
-      .prepare(
-        `SELECT * FROM scenarios WHERE climate_zone = ? ORDER BY created_at DESC LIMIT ?`
-      )
-      .all(opts.climateZone, limit) as ScenarioDBRow[];
-  } else {
-    rows = db
-      .prepare(`SELECT * FROM scenarios ORDER BY created_at DESC LIMIT ?`)
-      .all(limit) as ScenarioDBRow[];
+    query = query.eq('climate_zone', opts.climateZone);
   }
-  return rows.map(rowToScenario);
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(`Failed to list scenarios: ${error.message}`);
+  }
+  return (data as ScenarioDBRow[]).map(rowToScenario);
 }
 
-export function getScenario(id: number): ScenarioRow | null {
-  const row = db
-    .prepare(`SELECT * FROM scenarios WHERE id = ?`)
-    .get(id) as ScenarioDBRow | undefined;
-  return row ? rowToScenario(row) : null;
+export async function getScenario(id: number): Promise<ScenarioRow | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('scenarios')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to get scenario: ${error.message}`);
+  }
+  return data ? rowToScenario(data as ScenarioDBRow) : null;
 }
 
-export function deleteScenario(id: number): boolean {
-  const info = db.prepare(`DELETE FROM scenarios WHERE id = ?`).run(id);
-  return info.changes > 0;
+export async function deleteScenario(id: number): Promise<boolean> {
+  const db = getSupabaseAdmin();
+  const { error, count } = await db
+    .from('scenarios')
+    .delete({ count: 'exact' })
+    .eq('id', id);
+
+  if (error) {
+    throw new Error(`Failed to delete scenario: ${error.message}`);
+  }
+  return (count ?? 0) > 0;
 }
 
-export function getScenariosByIds(ids: number[]): ScenarioRow[] {
+export async function getScenariosByIds(ids: number[]): Promise<ScenarioRow[]> {
   if (ids.length === 0) return [];
-  const placeholders = ids.map(() => '?').join(',');
-  const rows = db
-    .prepare(`SELECT * FROM scenarios WHERE id IN (${placeholders})`)
-    .all(...ids) as ScenarioDBRow[];
-  return rows.map(rowToScenario);
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .from('scenarios')
+    .select('*')
+    .in('id', ids);
+
+  if (error) {
+    throw new Error(`Failed to fetch scenarios: ${error.message}`);
+  }
+  return (data as ScenarioDBRow[]).map(rowToScenario);
 }
